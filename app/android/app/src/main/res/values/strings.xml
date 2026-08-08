@@ -1,0 +1,40 @@
+<resources>
+    <string name="app_name">QIS+ Noten</string>
+    <string name="login_subtitle">Melde dich mit deinen Hochschul-Zugangsdaten an</string>
+    <string name="username_hint">Benutzername</string>
+    <string name="password_hint">Passwort</string>
+    <string name="new_password_hint">Neues Passwort (leer = unverändert)</string>
+    <string name="login_action">Anmelden</string>
+    <string name="grades_title">Notenspiegel</string>
+    <string name="settings_title">Einstellungen</string>
+    <string name="retry_action">Erneut versuchen</string>
+    <string name="logout_action">Abmelden</string>
+    <string name="save_action">Speichern</string>
+    <string name="display_options_title">Ansicht</string>
+    <string name="display_section_title">Anzeige</string>
+    <string name="hide_studienleistungen">Zeilen mit Studienleistung ausblenden</string>
+    <string name="average_section_title">Notenschnitt berechnen aus</string>
+    <string name="average_mode_all">Allen bestandenen Versuchen</string>
+    <string name="average_mode_last">Nur dem letzten Versuch</string>
+    <string name="average_mode_best">Nur der besten Note</string>
+    <string name="fields_title">Angezeigte Felder</string>
+    <string name="field_semester">Semester</string>
+    <string name="field_note">Note</string>
+    <string name="field_versuch">Versuch</string>
+    <string name="field_datum">Datum</string>
+    <string name="colors_title">Farben</string>
+    <string name="reset_colors_action">Standardfarben wiederherstellen</string>
+    <string name="kpi_average_label">Schnitt</string>
+    <string name="kpi_ects_label">ECTS</string>
+    <string name="filter_all">Alle</string>
+    <string name="filter_passed">Bestanden</string>
+    <string name="filter_open">Offen</string>
+    <string name="sort_grade">Note</string>
+    <string name="sort_semester">Semester</string>
+    <string name="sort_default">Sortieren</string>
+    <string name="sort_none">Keine</string>
+    <string name="profile_section_title">Profil</string>
+    <string name="studiengang_hint">Studiengang (z. B. B.Sc. Informatik)</string>
+    <string name="semester_hint">Semester</string>
+    <string name="target_ects_hint">Ziel-ECTS (automatisch)</string>
+</resources>
