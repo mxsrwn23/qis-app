@@ -1,5 +1,6 @@
 package dev.maxsauerwein.qis.network;
 
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -21,6 +22,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import dev.maxsauerwein.qis.model.GradeTable;
+import dev.maxsauerwein.qis.storage.SessionCookieStore;
 import okhttp3.Cookie;
 import okhttp3.CookieJar;
 import okhttp3.FormBody;
@@ -47,12 +49,16 @@ public final class QISClient {
     private static final String MENU_URL = "https://qis.hochschule-trier.de/qisserver/rds?state=change&type=1&moduleParameter=studyPOSMenu&nextdir=change&next=menu.vm&subdir=applications&xml=menu&purge=y&navigationPosition=functions%2CstudyPOSMenu&breadcrumb=studyPOSMenu&topitem=functions&subitem=studyPOSMenu";
 
     private final OkHttpClient httpClient;
+    private final InMemoryCookieJar cookieJar;
+    private final SessionCookieStore sessionCookieStore;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
-    public QISClient() {
+    public QISClient(Context context) {
+        cookieJar = new InMemoryCookieJar();
+        sessionCookieStore = new SessionCookieStore(context.getApplicationContext());
         httpClient = new OkHttpClient.Builder()
-                .cookieJar(new InMemoryCookieJar())
+                .cookieJar(cookieJar)
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .build();
@@ -86,18 +92,77 @@ public final class QISClient {
             }
             return valid;
         }
+
+        /** Seedet zuvor gespeicherte Cookies (z. B. aus SessionCookieStore) für einen Host, bevor
+         *  ein Request gestellt wird -- ermöglicht die Wiederverwendung einer Session ohne
+         *  erneuten Login. */
+        synchronized void seed(HttpUrl url, List<Cookie> cookies) {
+            saveFromResponse(url, cookies);
+        }
+
+        /** Entfernt alle für einen Host gespeicherten Cookies. */
+        synchronized void clear(HttpUrl url) {
+            cookieStore.remove(url.host());
+        }
     }
 
-    public void fetchGrades(String username, String password, Callback callback) {
+    /** Holt den Notenspiegel für den Callback-Aufrufer (Haupt-Thread). Siehe
+     *  {@link #fetchGradesBlocking(String, String, boolean)} für die Semantik von
+     *  allowSessionReuse. */
+    public void fetchGrades(String username, String password, boolean allowSessionReuse, Callback callback) {
         executor.execute(() -> {
             try {
-                login(username, password);
-                GradeTable gradeTable = fetchGradeTable();
+                GradeTable gradeTable = fetchGradesBlocking(username, password, allowSessionReuse);
                 mainHandler.post(() -> callback.onSuccess(gradeTable));
             } catch (Exception e) {
                 mainHandler.post(() -> callback.onError(e));
             }
         });
+    }
+
+    /** Synchrone Variante für Aufrufer, die bereits nicht auf dem Haupt-Thread laufen.
+     *
+     *  Mit {@code allowSessionReuse: true} (Normalfall, z. B. Pull-to-refresh) wird zuerst
+     *  versucht, eine gespeicherte QIS-Session wiederzuverwenden, statt den vollen SAML-Login
+     *  erneut zu durchlaufen -- nur bei abgelaufener/ungültiger Session (Redirect zurück zum IdP
+     *  oder fehlende Daten, erkennbar an einer QISException) folgt ein einmaliger Fallback auf
+     *  den vollen Login. Reine Netzwerkfehler (IOException) lösen dagegen keinen zweiten Versuch
+     *  aus. Mit {@code allowSessionReuse: false} (z. B. beim expliziten Testen neuer Zugangsdaten
+     *  in den Einstellungen) wird immer vollständig neu angemeldet. */
+    public GradeTable fetchGradesBlocking(String username, String password, boolean allowSessionReuse)
+            throws IOException, QISException {
+        if (allowSessionReuse) {
+            HttpUrl baseUrl = HttpUrl.parse(BASE);
+            List<Cookie> stored = sessionCookieStore.load(username, baseUrl);
+            if (stored != null) {
+                cookieJar.seed(baseUrl, stored);
+                try {
+                    return fetchGradeTable();
+                } catch (QISException sessionInvalid) {
+                    // Session abgelaufen oder Seite hat nicht die erwartete Struktur (z. B.
+                    // Redirect zurück zum IdP): einmaliger Fallback auf den vollen Login unten.
+                    // Die ungültige Cookie muss vorher entfernt werden, sonst schickt der erste
+                    // Request der Login-Seite die abgelaufene JSESSIONID/_shibsession_-Cookie mit
+                    // und QIS liefert nicht die erwartete leere Login-Seite.
+                    cookieJar.clear(baseUrl);
+                }
+            }
+        }
+        login(username, password);
+        saveCurrentSession(username);
+        return fetchGradeTable();
+    }
+
+    private void saveCurrentSession(String username) {
+        HttpUrl baseUrl = HttpUrl.parse(BASE);
+        List<Cookie> cookies = cookieJar.loadForRequest(baseUrl);
+        if (!cookies.isEmpty()) {
+            sessionCookieStore.save(username, cookies);
+        }
+    }
+
+    private boolean isLoginPage(Document document) {
+        return document.selectFirst("input[name=j_username]") != null;
     }
 
     // MARK: Anmeldung (qis-unlocked.py: qis_full_login)
@@ -112,7 +177,10 @@ public final class QISClient {
         Document loginDoc = Jsoup.parse(loginPageResponse.body().string(), landedUrl);
         loginPageResponse.close();
 
-        if (!landedUrl.contains("execution=e1s1")) {
+        // Die Ziel-URL enthält nicht immer "execution=e1s1" (Shibboleths Execution-ID hängt vom
+        // Flow-Zustand ab und steigt z. B. bei mehreren Anmeldeversuchen kurz hintereinander).
+        // Entscheidend ist allein, ob tatsächlich das Login-Formular geladen wurde.
+        if (!isLoginPage(loginDoc)) {
             throw new QISException("QIS hat nicht zur erwarteten Login-Seite weitergeleitet.");
         }
 
@@ -172,6 +240,9 @@ public final class QISClient {
 
     private GradeTable fetchGradeTable() throws IOException, QISException {
         Document menuDoc = getDocument(MENU_URL);
+        if (isLoginPage(menuDoc)) {
+            throw new QISException("Sitzung abgelaufen.");
+        }
 
         String notenspiegelHref = findHref(menuDoc, "state=notenspiegelStudent.*next=tree\\.vm");
         if (notenspiegelHref == null) {

@@ -13,9 +13,10 @@ struct LoginView: View {
             Spacer()
 
             VStack(spacing: 8) {
-                Image(systemName: "graduationcap.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.tint)
+                Image("LoginLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 72, height: 72)
                 Text("QIS+ Noten")
                     .font(.largeTitle.bold())
                 Text("Melde dich mit deinen Hochschul-Zugangsdaten an")
@@ -74,7 +75,9 @@ struct LoginView: View {
         let passwordValue = password
         Task {
             do {
-                let gradeTable = try await QISClient().fetchGrades(username: usernameValue, password: passwordValue)
+                let gradeTable = try await QISClient().fetchGrades(
+                    username: usernameValue, password: passwordValue, allowSessionReuse: false
+                )
                 isLoading = false
                 onLoginSucceeded(Credentials(username: usernameValue, password: passwordValue), gradeTable)
             } catch {

@@ -19,7 +19,7 @@ struct GradeSettings: Equatable {
     static let attemptFields = ["semester", "note", "versuch", "datum"]
     static let attemptFieldLabels = ["semester": "Semester", "note": "Note", "versuch": "Versuch", "datum": "Datum"]
 
-    var averageMode: AverageMode = .all
+    var averageMode: AverageMode = .best
     var hideStudienleistungen = false
     var visibleAttemptFields: Set<String> = Set(attemptFields)
     var customColors: [String: String] = [:]

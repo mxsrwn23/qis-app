@@ -1,6 +1,6 @@
 import Foundation
 
-struct GradeTable: Equatable {
+struct GradeTable: Equatable, Codable {
     let header: [String]
     let rows: [[String]]
     /// "(angestrebter) Abschluss" / "Fach" aus der Stammdaten-Tabelle oberhalb der Notentabelle,

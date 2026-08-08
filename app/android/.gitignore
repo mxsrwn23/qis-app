@@ -8,3 +8,8 @@
 .externalNativeBuild
 .cxx
 *.apk
+*.aab
+
+# Release-Signaturschlüssel -- niemals ins Repo
+/keystore/
+keystore.properties

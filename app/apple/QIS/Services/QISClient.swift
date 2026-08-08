@@ -6,6 +6,7 @@ enum QISError: Error, LocalizedError {
     case csrfTokenMissing
     case invalidCredentials
     case loginFailed
+    case sessionExpired
     case navigationFailed(String)
     case gradeTableNotFound
     case network(Error)
@@ -16,9 +17,20 @@ enum QISError: Error, LocalizedError {
         case .csrfTokenMissing: return "CSRF-Token konnte nicht gefunden werden."
         case .invalidCredentials: return "Zugangsdaten wurden nicht akzeptiert."
         case .loginFailed: return "QIS-Anmeldung ist fehlgeschlagen."
+        case .sessionExpired: return "Sitzung abgelaufen."
         case .navigationFailed(let step): return "Notenspiegel konnte nicht geladen werden (\(step))."
         case .gradeTableNotFound: return "Es wurde keine Notentabelle gefunden."
         case .network(let error): return error.localizedDescription
+        }
+    }
+
+    /// Ob dieser Fehler auf eine abgelaufene/ungültige Session hindeutet (Redirect zurück zum
+    /// IdP oder fehlende erwartete Daten), statt auf ein Netzwerkproblem. Nur in diesem Fall lohnt
+    /// sich ein einmaliger Fallback auf den vollen Login.
+    var indicatesInvalidSession: Bool {
+        switch self {
+        case .sessionExpired, .navigationFailed: return true
+        default: return false
         }
     }
 }
@@ -29,6 +41,7 @@ actor QISClient {
     private static let menuURL = URL(string: "https://qis.hochschule-trier.de/qisserver/rds?state=change&type=1&moduleParameter=studyPOSMenu&nextdir=change&next=menu.vm&subdir=applications&xml=menu&purge=y&navigationPosition=functions%2CstudyPOSMenu&breadcrumb=studyPOSMenu&topitem=functions&subitem=studyPOSMenu")!
 
     private let session: URLSession
+    private let cookieStorage: HTTPCookieStorage?
 
     init() {
         // Bewusst beim ephemeren In-Memory-Cookie-Speicher belassen. Ein separat zugewiesener
@@ -43,11 +56,55 @@ actor QISClient {
             "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7"
         ]
         self.session = URLSession(configuration: configuration)
+        self.cookieStorage = configuration.httpCookieStorage
     }
 
-    func fetchGrades(username: String, password: String) async throws -> GradeTable {
+    /// Holt den Notenspiegel. Mit `allowSessionReuse: true` (Normalfall, z. B. Pull-to-refresh)
+    /// wird zuerst versucht, eine gespeicherte QIS-Session wiederzuverwenden, statt den vollen
+    /// SAML-Login erneut zu durchlaufen -- nur bei abgelaufener/ungültiger Session (Redirect
+    /// zurück zum IdP oder fehlende Daten) folgt ein einmaliger Fallback auf den vollen Login.
+    /// Reine Netzwerkfehler lösen dagegen keinen zweiten Versuch aus. Mit `allowSessionReuse:
+    /// false` (z. B. beim expliziten Testen neuer Zugangsdaten in den Einstellungen) wird immer
+    /// vollständig neu angemeldet.
+    func fetchGrades(username: String, password: String, allowSessionReuse: Bool = true) async throws -> GradeTable {
+        if allowSessionReuse, let cookies = SessionCookieStore.load(username: username) {
+            applyCookies(cookies)
+            do {
+                return try await fetchGradeTable()
+            } catch let error as QISError where error.indicatesInvalidSession {
+                // Die ungültige Session-Cookie muss vor dem vollen Login entfernt werden, sonst
+                // schickt der erste Request der Login-Seite die abgelaufene JSESSIONID/
+                // _shibsession_-Cookie mit. QIS liefert dann nicht die erwartete leere
+                // Login-Seite, wodurch der Fallback-Login selbst mit "notOnLoginPage" fehlschlägt.
+                clearCookies()
+            }
+        }
         try await login(username: username, password: password)
+        saveCurrentSession(username: username)
         return try await fetchGradeTable()
+    }
+
+    private func applyCookies(_ cookies: [HTTPCookie]) {
+        for cookie in cookies {
+            cookieStorage?.setCookie(cookie)
+        }
+    }
+
+    private func clearCookies() {
+        guard let cookieStorage, let url = URL(string: "https://qis.hochschule-trier.de") else { return }
+        for cookie in cookieStorage.cookies(for: url) ?? [] {
+            cookieStorage.deleteCookie(cookie)
+        }
+    }
+
+    private func saveCurrentSession(username: String) {
+        guard let cookieStorage, let url = URL(string: "https://qis.hochschule-trier.de") else { return }
+        let cookies = cookieStorage.cookies(for: url) ?? []
+        SessionCookieStore.save(username: username, cookies: cookies)
+    }
+
+    private func isLoginPage(_ document: Document) -> Bool {
+        (try? document.select("input[name=j_username]").first()) != nil
     }
 
     // MARK: - Anmeldung (qis-unlocked.py: qis_full_login)
@@ -55,12 +112,17 @@ actor QISClient {
     private func login(username: String, password: String) async throws {
         let loginPageURL = appendingQuery(Self.base, ["state": "user", "type": "0"])
         let (loginPageData, loginPageResponse) = try await get(loginPageURL)
-        guard let landedURL = loginPageResponse.url,
-              landedURL.absoluteString.contains("execution=e1s1") else {
+        guard let landedURL = loginPageResponse.url else {
             throw QISError.notOnLoginPage
         }
 
         let loginDoc = try document(from: loginPageData)
+        // Die Ziel-URL enthält nicht immer "execution=e1s1" (Shibboleths Execution-ID hängt vom
+        // Flow-Zustand ab und steigt z. B. bei mehreren Anmeldeversuchen kurz hintereinander).
+        // Entscheidend ist allein, ob tatsächlich das Login-Formular geladen wurde.
+        guard isLoginPage(loginDoc) else {
+            throw QISError.notOnLoginPage
+        }
         guard let csrfToken = try loginDoc.select("input[name=csrf_token]").first()?.attr("value") else {
             throw QISError.csrfTokenMissing
         }
@@ -105,6 +167,9 @@ actor QISClient {
 
     private func fetchGradeTable() async throws -> GradeTable {
         let menuDoc = try await getDocument(Self.menuURL)
+        guard !isLoginPage(menuDoc) else {
+            throw QISError.sessionExpired
+        }
 
         guard let notenspiegelHref = try findHref(in: menuDoc, matching: "state=notenspiegelStudent.*next=tree\\.vm"),
               let notenspiegelURL = URL(string: notenspiegelHref, relativeTo: Self.menuURL)?.absoluteURL else {

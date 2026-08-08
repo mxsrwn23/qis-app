@@ -114,8 +114,11 @@ struct SettingsView: View {
         isSaving = true
         Task {
             do {
-                _ = try await QISClient().fetchGrades(username: newUsername, password: newPassword)
+                let gradeTable = try await QISClient().fetchGrades(
+                    username: newUsername, password: newPassword, allowSessionReuse: false
+                )
                 KeychainStore.save(Credentials(username: newUsername, password: newPassword))
+                GradeCache.save(gradeTable)
                 isSaving = false
                 dismiss()
             } catch {

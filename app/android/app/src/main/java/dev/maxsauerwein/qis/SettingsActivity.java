@@ -14,13 +14,17 @@ import dev.maxsauerwein.qis.model.Credentials;
 import dev.maxsauerwein.qis.model.GradeTable;
 import dev.maxsauerwein.qis.network.QISClient;
 import dev.maxsauerwein.qis.storage.CredentialStore;
+import dev.maxsauerwein.qis.storage.GradeCacheStore;
 import dev.maxsauerwein.qis.storage.GradeSettingsStore;
+import dev.maxsauerwein.qis.storage.SessionCookieStore;
 
 public final class SettingsActivity extends AppCompatActivity {
 
     private CredentialStore credentialStore;
     private GradeSettingsStore gradeSettingsStore;
-    private final QISClient qisClient = new QISClient();
+    private GradeCacheStore gradeCacheStore;
+    private SessionCookieStore sessionCookieStore;
+    private QISClient qisClient;
 
     private TextInputEditText usernameInput;
     private TextInputEditText passwordInput;
@@ -37,6 +41,9 @@ public final class SettingsActivity extends AppCompatActivity {
         setContentView(R.layout.activity_settings);
         credentialStore = new CredentialStore(getApplicationContext());
         gradeSettingsStore = new GradeSettingsStore(getApplicationContext());
+        gradeCacheStore = new GradeCacheStore(getApplicationContext());
+        sessionCookieStore = new SessionCookieStore(getApplicationContext());
+        qisClient = new QISClient(getApplicationContext());
 
         MaterialToolbar toolbar = findViewById(R.id.settingsToolbar);
         toolbar.setNavigationOnClickListener(v -> finish());
@@ -68,6 +75,8 @@ public final class SettingsActivity extends AppCompatActivity {
         saveButton.setOnClickListener(v -> save(existing));
         logoutButton.setOnClickListener(v -> {
             credentialStore.clear();
+            gradeCacheStore.clear();
+            sessionCookieStore.clear();
             setResult(RESULT_FIRST_USER);
             finish();
         });
@@ -99,11 +108,12 @@ public final class SettingsActivity extends AppCompatActivity {
             return;
         }
         setLoading(true);
-        qisClient.fetchGrades(username, password, new QISClient.Callback() {
+        qisClient.fetchGrades(username, password, false, new QISClient.Callback() {
             @Override
             public void onSuccess(GradeTable gradeTable) {
                 setLoading(false);
                 credentialStore.save(new Credentials(username, password));
+                gradeCacheStore.saveTable(gradeTable);
                 setResult(RESULT_OK);
                 finish();
             }

@@ -24,6 +24,7 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
+import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.textfield.TextInputEditText;
 
 import dev.maxsauerwein.qis.model.Credentials;
@@ -31,7 +32,9 @@ import dev.maxsauerwein.qis.model.GradeTable;
 import dev.maxsauerwein.qis.model.ModuleCardData;
 import dev.maxsauerwein.qis.network.QISClient;
 import dev.maxsauerwein.qis.storage.CredentialStore;
+import dev.maxsauerwein.qis.storage.GradeCacheStore;
 import dev.maxsauerwein.qis.storage.GradeSettingsStore;
+import dev.maxsauerwein.qis.storage.SessionCookieStore;
 import dev.maxsauerwein.qis.util.GradeAnalysis;
 import dev.maxsauerwein.qis.util.GradeCardBuilder;
 
@@ -39,7 +42,9 @@ public final class MainActivity extends AppCompatActivity {
 
     private CredentialStore credentialStore;
     private GradeSettingsStore gradeSettingsStore;
-    private final QISClient qisClient = new QISClient();
+    private GradeCacheStore gradeCacheStore;
+    private SessionCookieStore sessionCookieStore;
+    private QISClient qisClient;
     private GradeTable currentGradeTable;
 
     private View loadingContainer;
@@ -97,6 +102,9 @@ public final class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         credentialStore = new CredentialStore(getApplicationContext());
         gradeSettingsStore = new GradeSettingsStore(getApplicationContext());
+        gradeCacheStore = new GradeCacheStore(getApplicationContext());
+        sessionCookieStore = new SessionCookieStore(getApplicationContext());
+        qisClient = new QISClient(getApplicationContext());
 
         loadingContainer = findViewById(R.id.loadingContainer);
         loginContainer = findViewById(R.id.loginContainer);
@@ -150,7 +158,24 @@ public final class MainActivity extends AppCompatActivity {
         errorRetryButton.setOnClickListener(v -> refresh());
         errorLogoutButton.setOnClickListener(v -> logout());
 
-        refresh();
+        bootstrap();
+    }
+
+    /** Passiver Abruf beim App-Start: zeigt vorhandene gecachte Daten sofort an (kein leerer
+     *  Ladescreen) und holt nur bei Bedarf im Hintergrund nach. */
+    private void bootstrap() {
+        Credentials credentials = credentialStore.load();
+        if (credentials == null) {
+            showOnly(loginContainer);
+            return;
+        }
+        GradeTable cached = gradeCacheStore.loadTable();
+        if (cached != null) {
+            showGrades(cached);
+        } else {
+            showOnly(loadingContainer);
+        }
+        performFetch(credentials, false);
     }
 
     private void showSortMenu(View anchor) {
@@ -203,16 +228,38 @@ public final class MainActivity extends AppCompatActivity {
         return false;
     }
 
+    /** Bewusster Force-Refresh, ausgelöst durch Pull-to-refresh oder den Retry-Button. */
     private void refresh() {
         Credentials credentials = credentialStore.load();
         if (credentials == null) {
             showOnly(loginContainer);
             return;
         }
-        showOnly(loadingContainer);
-        qisClient.fetchGrades(credentials.username, credentials.password, new QISClient.Callback() {
+        performFetch(credentials, true);
+    }
+
+    /** Zentrale Stelle für alle Notenspiegel-Abrufe: respektiert Cache-Frische, Force-Refresh und
+     *  die harte 30-Sekunden-Untergrenze zwischen Versuchen. Ruft das QIS-Portal nur, wenn
+     *  wirklich nötig, und fällt bei einem Fehler auf zuletzt gecachte Daten zurück, falls
+     *  vorhanden -- kein automatischer Sofort-Retry. */
+    private void performFetch(Credentials credentials, boolean force) {
+        if (!gradeCacheStore.canAttempt()) {
+            gradesSwipeRefresh.setRefreshing(false);
+            return;
+        }
+        if (!force && gradeCacheStore.isFresh()) {
+            gradesSwipeRefresh.setRefreshing(false);
+            GradeTable cached = gradeCacheStore.loadTable();
+            if (cached != null) {
+                showGrades(cached);
+            }
+            return;
+        }
+        gradeCacheStore.recordAttempt();
+        qisClient.fetchGrades(credentials.username, credentials.password, true, new QISClient.Callback() {
             @Override
             public void onSuccess(GradeTable gradeTable) {
+                gradeCacheStore.saveTable(gradeTable);
                 gradesSwipeRefresh.setRefreshing(false);
                 showGrades(gradeTable);
             }
@@ -220,7 +267,13 @@ public final class MainActivity extends AppCompatActivity {
             @Override
             public void onError(Exception error) {
                 gradesSwipeRefresh.setRefreshing(false);
-                showError(error.getMessage());
+                GradeTable cached = gradeCacheStore.loadTable();
+                if (cached != null) {
+                    showGrades(cached);
+                    Snackbar.make(gradesRecyclerView, error.getMessage(), Snackbar.LENGTH_LONG).show();
+                } else {
+                    showError(error.getMessage());
+                }
             }
         });
     }
@@ -232,11 +285,12 @@ public final class MainActivity extends AppCompatActivity {
             return;
         }
         setLoginLoading(true);
-        qisClient.fetchGrades(username, password, new QISClient.Callback() {
+        qisClient.fetchGrades(username, password, false, new QISClient.Callback() {
             @Override
             public void onSuccess(GradeTable gradeTable) {
                 setLoginLoading(false);
                 credentialStore.save(new Credentials(username, password));
+                gradeCacheStore.saveTable(gradeTable);
                 showGrades(gradeTable);
             }
 
@@ -366,6 +420,8 @@ public final class MainActivity extends AppCompatActivity {
 
     private void logout() {
         credentialStore.clear();
+        gradeCacheStore.clear();
+        sessionCookieStore.clear();
         showOnly(loginContainer);
     }
 

@@ -23,7 +23,7 @@ public final class GradeSettingsStore {
     public static final String[] ATTEMPT_FIELDS = {"semester", "note", "versuch", "datum"};
 
     public static final class Settings {
-        public AverageMode averageMode = AverageMode.ALL;
+        public AverageMode averageMode = AverageMode.BEST;
         public boolean hideStudienleistungen = false;
         public Set<String> visibleAttemptFields = new HashSet<>(Arrays.asList(ATTEMPT_FIELDS));
         public Map<String, String> customColors = new HashMap<>();
@@ -63,11 +63,11 @@ public final class GradeSettingsStore {
 
     public Settings load() {
         Settings settings = new Settings();
-        String modeName = prefs.getString(KEY_AVERAGE_MODE, AverageMode.ALL.name());
+        String modeName = prefs.getString(KEY_AVERAGE_MODE, AverageMode.BEST.name());
         try {
             settings.averageMode = AverageMode.valueOf(modeName);
         } catch (IllegalArgumentException ignored) {
-            settings.averageMode = AverageMode.ALL;
+            settings.averageMode = AverageMode.BEST;
         }
         settings.hideStudienleistungen = prefs.getBoolean(KEY_HIDE_STUDIENLEISTUNGEN, false);
         settings.visibleAttemptFields = new HashSet<>(

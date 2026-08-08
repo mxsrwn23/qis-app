@@ -15,6 +15,7 @@
     <img src="https://img.shields.io/badge/iOS-17%2B-blue" alt="iOS 17+">
     <img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+">
     <img src="https://img.shields.io/badge/Android-8.0%2B-green" alt="Android 8.0+ (API 26)">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT%20(Non--Commercial)-green" alt="License: Modified MIT (Non-Commercial)"></a>
   </p>
 
   <p><em>Inoffizielles, privates Projekt – keine offizielle Verbindung zur Hochschule Trier.</em></p>
@@ -94,6 +95,8 @@ Alternativ das Projekt direkt in Android Studio öffnen und über **Run** starte
 
 Die Apps erheben und übertragen **keine Daten an Dritte**. Zugangsdaten werden ausschließlich lokal und verschlüsselt auf dem Gerät gespeichert (iOS/macOS: Keychain, Android: `EncryptedSharedPreferences`) und nur für die direkte SSO-Anmeldung bei `qis.hochschule-trier.de` verwendet. Es gibt kein Tracking, keine Analytics und keine Server-Komponente – die Apps sprechen ausschließlich direkt mit dem QIS-Portal der Hochschule.
 
+Vollständige Datenschutzerklärung: [PRIVACY.md](PRIVACY.md)
+
 ---
 
 ## Projektstruktur
@@ -147,3 +150,5 @@ qis-app/
 ## Hinweis
 
 Dieses Projekt ist inoffiziell und steht in keiner offiziellen Verbindung zur Hochschule Trier.
+
+Veröffentlicht unter der [Modified MIT License (Non-Commercial)](LICENSE).
