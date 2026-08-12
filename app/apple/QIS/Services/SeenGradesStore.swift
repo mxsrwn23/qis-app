@@ -1,31 +1,41 @@
 import Foundation
 
-/// Erkennt Module, deren Note seit dem letzten bekannten Stand von "offen" auf "benotet"
-/// gewechselt ist, damit GradesView sie mit einem "Neu"-Badge markieren und automatisch aufklappen
-/// kann. Der Vergleich läuft gegen den zuletzt gespeicherten Stand, der bei jedem Aufruf
-/// aktualisiert wird -- das Badge erscheint also nur einmalig, bis die neue Note einmal angezeigt
-/// wurde.
+/// Merkt sich, welche Module beim letzten Anzeigen bereits benotet waren, und ermittelt daraus,
+/// welche Module seit dem letzten bekannten Stand von "offen" auf "benotet" gewechselt sind. Damit
+/// kann GradesView frisch benotete Module mit einem Neu-Badge markieren.
 enum SeenGradesStore {
-    private static let key = "qis.gradedModuleKeys"
+    private static let seenKey = "qis.seenGradedModules"
 
+    /// Vergleicht die aktuell benoteten Module mit dem zuletzt gemerkten Stand und liefert die
+    /// Modulnamen, die neu hinzugekommen sind. Aktualisiert dabei den gemerkten Stand.
+    ///
+    /// Beim allerersten Aufruf (noch keine Baseline gespeichert) wird der aktuelle Stand nur
+    /// gemerkt und eine leere Menge zurückgegeben, damit nicht sämtliche vorhandenen Noten
+    /// fälschlich als neu markiert werden.
     static func newlyGradedModuleKeys(in table: GradeTable) -> Set<String> {
         let currentGraded = gradedModuleKeys(in: table)
-        defer { UserDefaults.standard.set(Array(currentGraded), forKey: key) }
+        let defaults = UserDefaults.standard
 
-        guard let previous = UserDefaults.standard.array(forKey: key) as? [String] else {
-            // Kein vorheriger Stand vorhanden (erster Aufruf überhaupt): Baseline nur anlegen,
-            // nichts als neu markieren.
+        guard let stored = defaults.stringArray(forKey: seenKey) else {
+            defaults.set(Array(currentGraded), forKey: seenKey)
             return []
         }
-        return currentGraded.subtracting(previous)
+
+        let baseline = Set(stored)
+        let newlyGraded = currentGraded.subtracting(baseline)
+        defaults.set(Array(currentGraded), forKey: seenKey)
+        return newlyGraded
     }
 
     static func clear() {
-        UserDefaults.standard.removeObject(forKey: key)
+        UserDefaults.standard.removeObject(forKey: seenKey)
     }
 
+    /// Baut die Modulkarten wie die Anzeige und liefert die Namen aller Module, die ein finales
+    /// Ergebnis haben (bestanden oder nicht bestanden) -- also nicht mehr offen/angemeldet sind.
     private static func gradedModuleKeys(in table: GradeTable) -> Set<String> {
         let cards = GradeCardBuilder.buildCards(table: table, settings: GradeSettings())
-        return Set(cards.filter { !$0.grade.trimmingCharacters(in: .whitespaces).isEmpty }.map(\.moduleName))
+        let graded = cards.filter { $0.statusCategory == .be || $0.statusCategory == .fail }
+        return Set(graded.map(\.moduleName))
     }
 }
