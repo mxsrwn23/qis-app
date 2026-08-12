@@ -25,8 +25,23 @@ struct ModuleCardData: Identifiable {
     /// True, wenn dieses Modul seit dem letzten bekannten Stand von "offen" auf "benotet"
     /// gewechselt ist, siehe SeenGradesStore.
     var isNew = false
+    /// Aus den Versuchsvermerken ermittelter Status (`.notAdmitted` bei NZ, `.noResult` bei
+    /// RT/NE/KR), der den regulären Modulstatus ersetzt, solange noch kein finales Ergebnis
+    /// vorliegt. Wird von GradeCardBuilder gesetzt.
+    var remarkStatus: GradeStatusCategory?
 
     var statusCategory: GradeStatusCategory? {
+        let base = baseStatusCategory
+        // Ein Modul, das noch kein finales Ergebnis hat, aber einen Vermerk trägt, aus dem in diesem
+        // Semester keine Note mehr folgt, wird als eigene Kategorie geführt -- sonst sähe es wie ein
+        // normal offenes Modul aus.
+        if let remarkStatus, base != .be, base != .fail {
+            return remarkStatus
+        }
+        return base
+    }
+
+    private var baseStatusCategory: GradeStatusCategory? {
         switch status.trimmingCharacters(in: .whitespaces).lowercased() {
         case "be": return .be
         case "pv": return .pv
@@ -42,6 +57,8 @@ struct ModuleCardData: Identifiable {
         case .pv: return "Offen"
         case .fail: return "Nicht bestanden"
         case .an: return "Angemeldet"
+        case .notAdmitted: return "Nicht zugelassen"
+        case .noResult: return "Kein Ergebnis"
         case .none: return status.trimmingCharacters(in: .whitespaces)
         }
     }

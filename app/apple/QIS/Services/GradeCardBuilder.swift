@@ -4,6 +4,13 @@ import Foundation
 /// werden darunter gruppiert und mit dem umgebenden Kernmodule-/Pflichtmodule-/
 /// Wahlpflichtmodule-Abschnitt versehen).
 enum GradeCardBuilder {
+    /// NZ = nicht zugelassen: die Prüfungsvorleistung wurde nicht bekommen, daher gab es keine
+    /// Zulassung zur Prüfung. Eigener Status "Nicht zugelassen".
+    private static let notAdmittedRemarks: Set<String> = ["nz"]
+    /// RT = Rücktritt, NE = nicht erschienen, KR = krank: trotz Zulassung (PV vorhanden) wurde die
+    /// Prüfung nicht geschrieben. Status "Kein Ergebnis".
+    private static let withdrawnRemarks: Set<String> = ["rt", "ne", "kr"]
+
     static func buildCards(table: GradeTable, settings: GradeSettings, newModuleKeys: Set<String> = []) -> [ModuleCardData] {
         let prüfungstextIndex = GradeStyling.columnIndex(in: table.header, containing: "prüfungstext")
         let statusIndex = GradeStyling.columnIndex(in: table.header, containing: "status")
@@ -71,6 +78,18 @@ enum GradeCardBuilder {
                 .filter { !$0.isEmpty }
                 .joined(separator: " ")
 
+            // Über alle (ungefilterten) Detailzeilen scannen, da der Vermerk in einer beliebigen
+            // Spalte stehen kann und auch für ausgeblendete Studienleistungen relevant bleibt.
+            func containsRemark(from remarks: Set<String>) -> Bool {
+                detailRows.contains { detailRow in
+                    detailRow.contains { remarks.contains($0.trimmingCharacters(in: .whitespaces).lowercased()) }
+                }
+            }
+            let remarkStatus: GradeStatusCategory? =
+                containsRemark(from: notAdmittedRemarks) ? .notAdmitted
+                : containsRemark(from: withdrawnRemarks) ? .noResult
+                : nil
+
             cards.append(ModuleCardData(
                 sectionTitle: currentSectionTitle,
                 moduleName: moduleName,
@@ -78,7 +97,8 @@ enum GradeCardBuilder {
                 status: value(statusIndex, in: row),
                 ects: value(ectsIndex, in: row).trimmingCharacters(in: .whitespaces),
                 attempts: attempts,
-                isNew: newModuleKeys.contains(moduleName)
+                isNew: newModuleKeys.contains(moduleName),
+                remarkStatus: remarkStatus
             ))
         }
 

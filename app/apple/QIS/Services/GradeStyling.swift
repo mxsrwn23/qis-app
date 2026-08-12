@@ -32,8 +32,23 @@ enum GradeColorKey: String, CaseIterable {
 
 enum GradeStatusCategory: String {
     case be, pv, fail, an
+    /// Nicht zur Prüfung zugelassen (NZ) -- die Prüfungsvorleistung wurde nicht bekommen.
+    case notAdmitted
+    /// Prüfung trotz Zulassung nicht geschrieben (Rücktritt, nicht erschienen, krank), daher kommt
+    /// in diesem Semester kein Ergebnis mehr.
+    case noResult
 
-    var colorKey: GradeColorKey { GradeColorKey(rawValue: rawValue)! }
+    /// Nur die vier Standardkategorien haben eine anpassbare Markenfarbe (GradeColorKey). Die
+    /// Vermerks-Kategorien erhalten in GradeStyling feste Farben.
+    var colorKey: GradeColorKey? {
+        switch self {
+        case .be: return .be
+        case .pv: return .pv
+        case .fail: return .fail
+        case .an: return .an
+        case .notAdmitted, .noResult: return nil
+        }
+    }
 }
 
 enum GradeStyling {
@@ -65,6 +80,23 @@ enum GradeStyling {
 
     static func backgroundTint(for key: GradeColorKey, customColors: [String: String]) -> Color {
         accent(for: key, customColors: customColors).opacity(0.14)
+    }
+
+    /// Farbe pro Status-Kategorie. "Nicht zugelassen" bekommt ein aufmerksamkeitsstarkes gedämpftes
+    /// Amber (ein Hinweis, der auffallen soll), "Kein Ergebnis" ein neutrales Grau. Beide heben sich
+    /// klar vom Blau des offenen Status ab.
+    static func accent(for category: GradeStatusCategory, customColors: [String: String]) -> Color {
+        switch category {
+        case .notAdmitted: return Color(hex: 0xB2661F)
+        case .noResult: return .gray
+        default:
+            guard let key = category.colorKey else { return .gray }
+            return accent(for: key, customColors: customColors)
+        }
+    }
+
+    static func backgroundTint(for category: GradeStatusCategory, customColors: [String: String]) -> Color {
+        accent(for: category, customColors: customColors).opacity(0.14)
     }
 }
 

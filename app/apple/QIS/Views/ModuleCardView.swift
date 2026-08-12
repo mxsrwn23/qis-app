@@ -95,8 +95,8 @@ private struct StatusChip: View {
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .foregroundStyle(GradeStyling.accent(for: category.colorKey, customColors: customColors))
-            .background(GradeStyling.backgroundTint(for: category.colorKey, customColors: customColors), in: Capsule())
+            .foregroundStyle(GradeStyling.accent(for: category, customColors: customColors))
+            .background(GradeStyling.backgroundTint(for: category, customColors: customColors), in: Capsule())
     }
 }
 
