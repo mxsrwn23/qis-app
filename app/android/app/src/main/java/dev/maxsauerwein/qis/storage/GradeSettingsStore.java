@@ -36,6 +36,11 @@ public final class GradeSettingsStore {
          *  automatisch aus der Stammdaten-Tabelle erkannt. Steuert den Bachelor-/Master-Standardwert
          *  für effectiveTargetEcts(). */
         public String degreeType = "";
+        /** Name-Wert von GradeCardBuilder.Filter, hier nur als String gehalten, damit storage
+         *  nicht von util abhängen muss. */
+        public String filter = "ALL";
+        /** Name-Wert von GradeCardBuilder.Sort, siehe filter. */
+        public String sort = "NONE";
 
         public int effectiveTargetEcts() {
             if (targetEcts > 0) {
@@ -54,6 +59,8 @@ public final class GradeSettingsStore {
     private static final String KEY_SEMESTER = "semester";
     private static final String KEY_TARGET_ECTS = "target_ects";
     private static final String KEY_DEGREE_TYPE = "degree_type";
+    private static final String KEY_FILTER = "filter";
+    private static final String KEY_SORT = "sort";
 
     private final SharedPreferences prefs;
 
@@ -90,6 +97,8 @@ public final class GradeSettingsStore {
         settings.semester = prefs.getInt(KEY_SEMESTER, 0);
         settings.targetEcts = prefs.getInt(KEY_TARGET_ECTS, 0);
         settings.degreeType = prefs.getString(KEY_DEGREE_TYPE, "");
+        settings.filter = prefs.getString(KEY_FILTER, "ALL");
+        settings.sort = prefs.getString(KEY_SORT, "NONE");
         return settings;
     }
 
@@ -104,6 +113,8 @@ public final class GradeSettingsStore {
                 .putInt(KEY_SEMESTER, settings.semester)
                 .putInt(KEY_TARGET_ECTS, settings.targetEcts)
                 .putString(KEY_DEGREE_TYPE, settings.degreeType)
+                .putString(KEY_FILTER, settings.filter)
+                .putString(KEY_SORT, settings.sort)
                 .apply();
     }
 }

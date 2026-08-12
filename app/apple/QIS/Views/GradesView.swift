@@ -8,8 +8,8 @@ struct GradesView: View {
     @State private var showingSettings = false
     @State private var showingDisplayOptions = false
     @State private var gradeSettings: GradeSettings
-    @State private var filter: GradesFilter = .all
-    @State private var sort: GradesSort = .none
+    @AppStorage("qis.filter") private var filter: GradesFilter = .all
+    @AppStorage("qis.sort") private var sort: GradesSort = .none
 
     init(gradeTable: GradeTable, onRefresh: @escaping () async -> Void, onLogout: @escaping () -> Void) {
         self.gradeTable = gradeTable

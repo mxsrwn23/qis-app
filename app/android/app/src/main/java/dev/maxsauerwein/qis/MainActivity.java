@@ -126,7 +126,12 @@ public final class MainActivity extends AppCompatActivity {
         kpiEctsValue = findViewById(R.id.kpiEctsValue);
         kpiEctsProgress = findViewById(R.id.kpiEctsProgress);
 
+        GradeSettingsStore.Settings savedViewState = gradeSettingsStore.load();
+        currentFilter = parseFilter(savedViewState.filter);
+        currentSort = parseSort(savedViewState.sort);
+
         filterChipGroup = findViewById(R.id.filterChipGroup);
+        filterChipGroup.check(filterToChipId(currentFilter));
         filterChipGroup.setOnCheckedStateChangeListener((group, checkedIds) -> {
             if (checkedIds.isEmpty()) {
                 return;
@@ -139,6 +144,7 @@ public final class MainActivity extends AppCompatActivity {
             } else {
                 currentFilter = GradeCardBuilder.Filter.ALL;
             }
+            saveViewState();
             if (currentGradeTable != null) {
                 showGrades(currentGradeTable);
             }
@@ -146,6 +152,7 @@ public final class MainActivity extends AppCompatActivity {
 
         sortButton = findViewById(R.id.sortButton);
         sortButton.setOnClickListener(this::showSortMenu);
+        updateSortButtonLabel();
 
         gradesSwipeRefresh = findViewById(R.id.gradesSwipeRefresh);
         gradesRecyclerView = findViewById(R.id.gradesRecyclerView);
@@ -193,12 +200,45 @@ public final class MainActivity extends AppCompatActivity {
                 currentSort = GradeCardBuilder.Sort.NONE;
             }
             updateSortButtonLabel();
+            saveViewState();
             if (currentGradeTable != null) {
                 showGrades(currentGradeTable);
             }
             return true;
         });
         popup.show();
+    }
+
+    private void saveViewState() {
+        GradeSettingsStore.Settings settings = gradeSettingsStore.load();
+        settings.filter = currentFilter.name();
+        settings.sort = currentSort.name();
+        gradeSettingsStore.save(settings);
+    }
+
+    private GradeCardBuilder.Filter parseFilter(String value) {
+        try {
+            return GradeCardBuilder.Filter.valueOf(value);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return GradeCardBuilder.Filter.ALL;
+        }
+    }
+
+    private GradeCardBuilder.Sort parseSort(String value) {
+        try {
+            return GradeCardBuilder.Sort.valueOf(value);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return GradeCardBuilder.Sort.NONE;
+        }
+    }
+
+    private int filterToChipId(GradeCardBuilder.Filter filter) {
+        switch (filter) {
+            case PASSED: return R.id.filterChipPassed;
+            case OPEN: return R.id.filterChipOpen;
+            case ALL:
+            default: return R.id.filterChipAll;
+        }
     }
 
     private void updateSortButtonLabel() {
