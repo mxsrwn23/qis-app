@@ -3,10 +3,16 @@ import SwiftUI
 struct LoginView: View {
     let onLoginSucceeded: (Credentials, GradeTable) -> Void
 
+    private enum Field {
+        case username, password
+    }
+
     @State private var username = ""
     @State private var password = ""
+    @State private var isPasswordVisible = false
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @FocusState private var focusedField: Field?
 
     var body: some View {
         VStack(spacing: 20) {
@@ -25,18 +31,45 @@ struct LoginView: View {
                     .multilineTextAlignment(.center)
             }
 
-            VStack(spacing: 12) {
-                TextField("Benutzername", text: $username)
-                    .textContentType(.username)
+            VStack(spacing: 14) {
+                fieldRow(icon: "person.fill", isFocused: focusedField == .username) {
+                    TextField("Benutzername", text: $username)
+                        .textContentType(.username)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                        .autocorrectionDisabled()
+                        .focused($focusedField, equals: .username)
+                        .submitLabel(.next)
+                        .onSubmit { focusedField = .password }
+                }
+
+                fieldRow(icon: "lock.fill", isFocused: focusedField == .password) {
+                    Group {
+                        if isPasswordVisible {
+                            TextField("Passwort", text: $password)
+                        } else {
+                            SecureField("Passwort", text: $password)
+                        }
+                    }
+                    .textContentType(.password)
                     #if os(iOS)
                     .textInputAutocapitalization(.never)
                     #endif
                     .autocorrectionDisabled()
-                    .textFieldStyle(.roundedBorder)
-                SecureField("Passwort", text: $password)
-                    .textContentType(.password)
-                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .password)
+                    .submitLabel(.go)
                     .onSubmit(login)
+
+                    Button {
+                        isPasswordVisible.toggle()
+                    } label: {
+                        Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isPasswordVisible ? "Passwort verbergen" : "Passwort anzeigen")
+                }
             }
             .frame(maxWidth: 360)
 
@@ -67,8 +100,37 @@ struct LoginView: View {
         .padding()
     }
 
+    /// Einheitliche, moderne Eingabezeile: führendes SF-Symbol, das Eingabefeld und optionale
+    /// Trailing-Inhalte (z. B. der Passwort-Umschalter), eingebettet in eine gefüllte Kachel mit
+    /// dezentem Rahmen, der das aktive Feld hervorhebt.
+    private func fieldRow(
+        icon: String,
+        isFocused: Bool,
+        @ViewBuilder content: () -> some View
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(isFocused ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .frame(width: 22)
+            content()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(isFocused ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator), lineWidth: isFocused ? 2 : 1)
+        )
+        .animation(.easeInOut(duration: 0.15), value: isFocused)
+    }
+
     private func login() {
         guard !username.isEmpty, !password.isEmpty, !isLoading else { return }
+        focusedField = nil
         errorMessage = nil
         isLoading = true
         let usernameValue = username
