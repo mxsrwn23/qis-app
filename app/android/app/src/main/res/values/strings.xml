@@ -37,4 +37,5 @@
     <string name="studiengang_hint">Studiengang (z. B. B.Sc. Informatik)</string>
     <string name="semester_hint">Semester</string>
     <string name="target_ects_hint">Ziel-ECTS (automatisch)</string>
+    <string name="new_badge">Neu</string>
 </resources>

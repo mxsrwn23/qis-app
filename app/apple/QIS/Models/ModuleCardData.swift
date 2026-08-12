@@ -15,13 +15,16 @@ struct AttemptRow: Identifiable {
 }
 
 struct ModuleCardData: Identifiable {
-    let id = UUID()
+    var id: String { "\(sectionTitle ?? "")|\(moduleName)" }
     let sectionTitle: String?
     let moduleName: String
     let grade: String
     let status: String
     let ects: String
     let attempts: [AttemptRow]
+    /// True, wenn dieses Modul seit dem letzten bekannten Stand von "offen" auf "benotet"
+    /// gewechselt ist, siehe SeenGradesStore.
+    var isNew = false
 
     var statusCategory: GradeStatusCategory? {
         switch status.trimmingCharacters(in: .whitespaces).lowercased() {

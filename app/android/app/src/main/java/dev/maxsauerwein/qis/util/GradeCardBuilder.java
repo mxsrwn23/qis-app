@@ -1,8 +1,10 @@
 package dev.maxsauerwein.qis.util;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import dev.maxsauerwein.qis.model.AttemptRow;
 import dev.maxsauerwein.qis.model.GradeTable;
@@ -20,6 +22,11 @@ public final class GradeCardBuilder {
     }
 
     public static List<ModuleCardData> buildCards(GradeTable table, GradeSettingsStore.Settings settings) {
+        return buildCards(table, settings, Collections.emptySet());
+    }
+
+    public static List<ModuleCardData> buildCards(GradeTable table, GradeSettingsStore.Settings settings,
+                                                    Set<String> newModuleKeys) {
         int prüfungstextIndex = GradeStyling.columnIndex(table.header, "prüfungstext");
         int statusIndex = GradeStyling.columnIndex(table.header, "status");
         int noteIndex = GradeStyling.columnIndex(table.header, "note");
@@ -88,7 +95,8 @@ public final class GradeCardBuilder {
                     value(noteIndex, row).trim(),
                     value(statusIndex, row),
                     value(ectsIndex, row).trim(),
-                    attempts
+                    attempts,
+                    newModuleKeys.contains(moduleName)
             ));
         }
 

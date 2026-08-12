@@ -8,10 +8,12 @@ import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -34,6 +36,7 @@ import dev.maxsauerwein.qis.network.QISClient;
 import dev.maxsauerwein.qis.storage.CredentialStore;
 import dev.maxsauerwein.qis.storage.GradeCacheStore;
 import dev.maxsauerwein.qis.storage.GradeSettingsStore;
+import dev.maxsauerwein.qis.storage.SeenGradesStore;
 import dev.maxsauerwein.qis.storage.SessionCookieStore;
 import dev.maxsauerwein.qis.util.GradeAnalysis;
 import dev.maxsauerwein.qis.util.GradeCardBuilder;
@@ -43,9 +46,11 @@ public final class MainActivity extends AppCompatActivity {
     private CredentialStore credentialStore;
     private GradeSettingsStore gradeSettingsStore;
     private GradeCacheStore gradeCacheStore;
+    private SeenGradesStore seenGradesStore;
     private SessionCookieStore sessionCookieStore;
     private QISClient qisClient;
     private GradeTable currentGradeTable;
+    private Set<String> newModuleKeys = Collections.emptySet();
 
     private View loadingContainer;
     private View loginContainer;
@@ -103,6 +108,7 @@ public final class MainActivity extends AppCompatActivity {
         credentialStore = new CredentialStore(getApplicationContext());
         gradeSettingsStore = new GradeSettingsStore(getApplicationContext());
         gradeCacheStore = new GradeCacheStore(getApplicationContext());
+        seenGradesStore = new SeenGradesStore(getApplicationContext());
         sessionCookieStore = new SessionCookieStore(getApplicationContext());
         qisClient = new QISClient(getApplicationContext());
 
@@ -178,11 +184,20 @@ public final class MainActivity extends AppCompatActivity {
         }
         GradeTable cached = gradeCacheStore.loadTable();
         if (cached != null) {
-            showGrades(cached);
+            loadGrades(cached);
         } else {
             showOnly(loadingContainer);
         }
         performFetch(credentials, false);
+    }
+
+    /** Zentrale Stelle für jeden Wechsel zu einer (neu geladenen oder gecachten) Notentabelle:
+     *  ermittelt einmalig die frisch benoteten Module gegenüber dem zuletzt gesehenen Stand,
+     *  bevor die Tabelle angezeigt wird. So läuft der Vergleich nur bei echten Datenwechseln,
+     *  nicht bei jedem Neuzeichnen durch Filter/Sortierung. */
+    private void loadGrades(GradeTable gradeTable) {
+        newModuleKeys = seenGradesStore.newlyGradedModuleKeys(gradeTable);
+        showGrades(gradeTable);
     }
 
     private void showSortMenu(View anchor) {
@@ -301,7 +316,7 @@ public final class MainActivity extends AppCompatActivity {
             public void onSuccess(GradeTable gradeTable) {
                 gradeCacheStore.saveTable(gradeTable);
                 gradesSwipeRefresh.setRefreshing(false);
-                showGrades(gradeTable);
+                loadGrades(gradeTable);
             }
 
             @Override
@@ -331,7 +346,7 @@ public final class MainActivity extends AppCompatActivity {
                 setLoginLoading(false);
                 credentialStore.save(new Credentials(username, password));
                 gradeCacheStore.saveTable(gradeTable);
-                showGrades(gradeTable);
+                loadGrades(gradeTable);
             }
 
             @Override
@@ -366,7 +381,7 @@ public final class MainActivity extends AppCompatActivity {
             }
         }
 
-        List<ModuleCardData> allCards = GradeCardBuilder.buildCards(gradeTable, settings);
+        List<ModuleCardData> allCards = GradeCardBuilder.buildCards(gradeTable, settings, newModuleKeys);
         List<ModuleCardData> visibleCards = GradeCardBuilder.sorted(
                 GradeCardBuilder.filtered(allCards, currentFilter), currentSort);
 
@@ -461,6 +476,7 @@ public final class MainActivity extends AppCompatActivity {
     private void logout() {
         credentialStore.clear();
         gradeCacheStore.clear();
+        seenGradesStore.clear();
         sessionCookieStore.clear();
         showOnly(loginContainer);
     }

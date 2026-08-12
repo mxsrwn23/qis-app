@@ -47,6 +47,18 @@
                     android:layout_marginTop="6dp">
 
                     <TextView
+                        android:id="@+id/newBadge"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="6dp"
+                        android:paddingHorizontal="8dp"
+                        android:paddingVertical="3dp"
+                        android:text="@string/new_badge"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
+
+                    <TextView
                         android:id="@+id/statusChip"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"

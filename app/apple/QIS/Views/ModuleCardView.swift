@@ -5,8 +5,15 @@ struct ModuleCardView: View {
     let visibleFields: Set<String>
     let customColors: [String: String]
 
-    @State private var isExpanded = false
+    @State private var isExpanded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(card: ModuleCardData, visibleFields: Set<String>, customColors: [String: String]) {
+        self.card = card
+        self.visibleFields = visibleFields
+        self.customColors = customColors
+        _isExpanded = State(initialValue: card.isNew)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +58,9 @@ struct ModuleCardView: View {
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 HStack(spacing: 6) {
+                    if card.isNew {
+                        NewBadge()
+                    }
                     if let category = card.statusCategory {
                         StatusChip(label: card.statusLabel, category: category, customColors: customColors)
                     }
@@ -87,6 +97,17 @@ private struct StatusChip: View {
             .padding(.vertical, 3)
             .foregroundStyle(GradeStyling.accent(for: category.colorKey, customColors: customColors))
             .background(GradeStyling.backgroundTint(for: category.colorKey, customColors: customColors), in: Capsule())
+    }
+}
+
+private struct NewBadge: View {
+    var body: some View {
+        Text("NEU")
+            .font(.caption2.weight(.bold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .foregroundStyle(.white)
+            .background(Color.accentColor, in: Capsule())
     }
 }
 

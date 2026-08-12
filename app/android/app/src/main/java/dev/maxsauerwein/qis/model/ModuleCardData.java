@@ -12,15 +12,19 @@ public final class ModuleCardData {
     public final String status;
     public final String ects;
     public final List<AttemptRow> attempts;
+    /** True, wenn dieses Modul seit dem letzten bekannten Stand von "offen" auf "benotet"
+     *  gewechselt ist, siehe SeenGradesStore. */
+    public final boolean isNew;
 
     public ModuleCardData(String sectionTitle, String moduleName, String grade, String status,
-                           String ects, List<AttemptRow> attempts) {
+                           String ects, List<AttemptRow> attempts, boolean isNew) {
         this.sectionTitle = sectionTitle;
         this.moduleName = moduleName;
         this.grade = grade;
         this.status = status;
         this.ects = ects;
         this.attempts = attempts;
+        this.isNew = isNew;
     }
 
     public GradeStyling.StatusCategory statusCategory() {

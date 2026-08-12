@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GradesView: View {
     let gradeTable: GradeTable
+    let newModuleKeys: Set<String>
     let onRefresh: () async -> Void
     let onLogout: () -> Void
 
@@ -11,15 +12,16 @@ struct GradesView: View {
     @AppStorage("qis.filter") private var filter: GradesFilter = .all
     @AppStorage("qis.sort") private var sort: GradesSort = .none
 
-    init(gradeTable: GradeTable, onRefresh: @escaping () async -> Void, onLogout: @escaping () -> Void) {
+    init(gradeTable: GradeTable, newModuleKeys: Set<String>, onRefresh: @escaping () async -> Void, onLogout: @escaping () -> Void) {
         self.gradeTable = gradeTable
+        self.newModuleKeys = newModuleKeys
         self.onRefresh = onRefresh
         self.onLogout = onLogout
         _gradeSettings = State(initialValue: GradeSettings.loadApplyingAutoDetection(from: gradeTable))
     }
 
     private var allCards: [ModuleCardData] {
-        GradeCardBuilder.buildCards(table: gradeTable, settings: gradeSettings)
+        GradeCardBuilder.buildCards(table: gradeTable, settings: gradeSettings, newModuleKeys: newModuleKeys)
     }
 
     private var visibleCards: [ModuleCardData] {

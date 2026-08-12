@@ -11,6 +11,7 @@ struct RootView: View {
 
     @State private var phase: Phase = .checkingCredentials
     @State private var refreshErrorMessage: String?
+    @State private var newModuleKeys: Set<String> = []
 
     var body: some View {
         Group {
@@ -28,7 +29,7 @@ struct RootView: View {
                 LoginView { credentials, gradeTable in
                     KeychainStore.save(credentials)
                     GradeCache.save(gradeTable)
-                    phase = .loaded(gradeTable)
+                    present(gradeTable)
                 }
             case .loading:
                 ProgressView("Lade Notenspiegel…")
@@ -36,6 +37,7 @@ struct RootView: View {
                 NavigationStack {
                     GradesView(
                         gradeTable: gradeTable,
+                        newModuleKeys: newModuleKeys,
                         onRefresh: { Task { await refresh() } },
                         onLogout: logout
                     )
@@ -75,11 +77,26 @@ struct RootView: View {
             return
         }
         if let cached = GradeCache.load() {
-            phase = .loaded(cached)
+            present(cached)
         } else {
             phase = .loading
         }
         await performFetch(credentials: credentials, force: false)
+    }
+
+    /// Zentrale Stelle für jeden Wechsel zu einer (neu geladenen oder gecachten) Notentabelle:
+    /// ermittelt einmalig die frisch benoteten Module gegenüber dem zuletzt gesehenen Stand, bevor
+    /// die Tabelle angezeigt wird. So läuft der Vergleich nur bei echten Datenwechseln, nicht bei
+    /// jedem Re-Render von GradesView (Filter, Sortierung, Einstellungen).
+    private func present(_ table: GradeTable) {
+        if case .loaded(let current) = phase, current == table {
+            // Bereits angezeigte Tabelle (z. B. Cache-Anzeige gefolgt vom Fresh-Check in
+            // performFetch): nicht erneut gegen die inzwischen aktualisierte Baseline abgleichen,
+            // sonst würden gerade erkannte neue Noten sofort wieder verworfen.
+            return
+        }
+        newModuleKeys = SeenGradesStore.newlyGradedModuleKeys(in: table)
+        phase = .loaded(table)
     }
 
     /// Bewusster Force-Refresh, ausgelöst durch Pull-to-refresh oder den Retry-Button.
@@ -100,7 +117,7 @@ struct RootView: View {
             return
         }
         if !force, GradeCache.isFresh(), let cached = GradeCache.load() {
-            phase = .loaded(cached)
+            present(cached)
             return
         }
         GradeCache.recordAttempt()
@@ -108,10 +125,10 @@ struct RootView: View {
             let gradeTable = try await QISClient().fetchGrades(username: credentials.username, password: credentials.password)
             GradeCache.save(gradeTable)
             refreshErrorMessage = nil
-            phase = .loaded(gradeTable)
+            present(gradeTable)
         } catch {
             if let cached = GradeCache.load() {
-                phase = .loaded(cached)
+                present(cached)
                 refreshErrorMessage = error.localizedDescription
             } else {
                 phase = .failed(error.localizedDescription)
@@ -123,6 +140,7 @@ struct RootView: View {
         KeychainStore.clear()
         GradeCache.clear()
         SessionCookieStore.clear()
+        SeenGradesStore.clear()
         phase = .loggedOut
     }
 }

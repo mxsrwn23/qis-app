@@ -32,6 +32,11 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
         this.cards = cards;
         this.visibleFields = visibleFields;
         this.customColors = customColors;
+        for (int i = 0; i < cards.size(); i++) {
+            if (cards.get(i).isNew) {
+                expandedPositions.add(i);
+            }
+        }
     }
 
     @NonNull
@@ -49,6 +54,13 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
 
         holder.moduleName.setText(card.moduleName);
         holder.moduleGrade.setText(card.grade.isEmpty() ? "–" : card.grade);
+
+        holder.newBadge.setVisibility(card.isNew ? View.VISIBLE : View.GONE);
+        if (card.isNew) {
+            int accent = holder.itemView.getResources().getColor(R.color.qis_primary, null);
+            holder.newBadge.setTextColor(accent);
+            holder.newBadge.setBackground(pillDrawable(GradeStyling.withAlpha(accent, 36)));
+        }
 
         GradeStyling.StatusCategory category = card.statusCategory();
         if (category != null) {
@@ -138,6 +150,7 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
         final LinearLayout cardHeader;
         final TextView moduleName;
         final TextView moduleGrade;
+        final TextView newBadge;
         final TextView statusChip;
         final TextView ectsChip;
         final ImageView expandIcon;
@@ -149,6 +162,7 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
             cardHeader = itemView.findViewById(R.id.cardHeader);
             moduleName = itemView.findViewById(R.id.moduleName);
             moduleGrade = itemView.findViewById(R.id.moduleGrade);
+            newBadge = itemView.findViewById(R.id.newBadge);
             statusChip = itemView.findViewById(R.id.statusChip);
             ectsChip = itemView.findViewById(R.id.ectsChip);
             expandIcon = itemView.findViewById(R.id.expandIcon);

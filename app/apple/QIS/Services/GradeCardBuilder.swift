@@ -4,7 +4,7 @@ import Foundation
 /// werden darunter gruppiert und mit dem umgebenden Kernmodule-/Pflichtmodule-/
 /// Wahlpflichtmodule-Abschnitt versehen).
 enum GradeCardBuilder {
-    static func buildCards(table: GradeTable, settings: GradeSettings) -> [ModuleCardData] {
+    static func buildCards(table: GradeTable, settings: GradeSettings, newModuleKeys: Set<String> = []) -> [ModuleCardData] {
         let prüfungstextIndex = GradeStyling.columnIndex(in: table.header, containing: "prüfungstext")
         let statusIndex = GradeStyling.columnIndex(in: table.header, containing: "status")
         let noteIndex = GradeStyling.columnIndex(in: table.header, containing: "note")
@@ -77,7 +77,8 @@ enum GradeCardBuilder {
                 grade: value(noteIndex, in: row).trimmingCharacters(in: .whitespaces),
                 status: value(statusIndex, in: row),
                 ects: value(ectsIndex, in: row).trimmingCharacters(in: .whitespaces),
-                attempts: attempts
+                attempts: attempts,
+                isNew: newModuleKeys.contains(moduleName)
             ))
         }
 
