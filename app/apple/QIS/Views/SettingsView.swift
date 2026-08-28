@@ -77,6 +77,14 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        HelpView()
+                    } label: {
+                        Label("Hilfe & Info", systemImage: "questionmark.circle")
+                    }
+                }
+
+                Section {
                     Button("Abmelden", role: .destructive, action: onLogout)
                 }
             }
