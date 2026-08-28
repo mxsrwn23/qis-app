@@ -30,11 +30,14 @@ struct ModuleCardData: Identifiable {
     /// vorliegt. Wird von GradeCardBuilder gesetzt.
     var remarkStatus: GradeStatusCategory?
 
-    /// True, wenn in einer Versuchszeile bereits eine numerische Note eingetragen wurde -- auch wenn
-    /// der Modulstatus noch "offen" ist. Noten erscheinen zuerst unten in der Versuchszeile, bevor der
+    /// True, wenn im jüngsten (untersten) Versuch bereits eine numerische Note steht -- auch wenn der
+    /// Modulstatus noch "offen" ist. Noten erscheinen zuerst unten in der Versuchszeile, bevor der
     /// Modulstatus oben auf "bestanden" wechselt; das Neu-Badge soll schon ab diesem Zeitpunkt greifen.
+    /// Bewusst nur der jüngste Versuch: Bei einem nicht bestandenen Versuch mit noch unbenotetem
+    /// Wiederholungsversuch (neue leere Versuchszeile) gilt das Modul nicht als frisch benotet.
     var hasGradeEntered: Bool {
-        attempts.contains { Double($0.note.replacingOccurrences(of: ",", with: ".")) != nil }
+        guard let latest = attempts.last else { return false }
+        return Double(latest.note.replacingOccurrences(of: ",", with: ".")) != nil
     }
 
     var statusCategory: GradeStatusCategory? {
