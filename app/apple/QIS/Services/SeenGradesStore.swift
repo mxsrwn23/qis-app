@@ -31,11 +31,13 @@ enum SeenGradesStore {
         UserDefaults.standard.removeObject(forKey: seenKey)
     }
 
-    /// Baut die Modulkarten wie die Anzeige und liefert die Namen aller Module, die ein finales
-    /// Ergebnis haben (bestanden oder nicht bestanden) -- also nicht mehr offen/angemeldet sind.
+    /// Baut die Modulkarten wie die Anzeige und liefert die Namen aller Module, für die bereits eine
+    /// Note vorliegt -- entweder als finales Ergebnis (bestanden/nicht bestanden) oder als numerische
+    /// Note in einer Versuchszeile, während der Modulstatus noch "offen" ist. So wird das Neu-Badge
+    /// schon gesetzt, sobald die Note unten erscheint, und nicht erst wenn der Status oben wechselt.
     private static func gradedModuleKeys(in table: GradeTable) -> Set<String> {
         let cards = GradeCardBuilder.buildCards(table: table, settings: GradeSettings())
-        let graded = cards.filter { $0.statusCategory == .be || $0.statusCategory == .fail }
+        let graded = cards.filter { $0.statusCategory == .be || $0.statusCategory == .fail || $0.hasGradeEntered }
         return Set(graded.map(\.moduleName))
     }
 }

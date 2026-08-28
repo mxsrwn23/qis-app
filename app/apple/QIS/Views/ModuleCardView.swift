@@ -107,7 +107,7 @@ private struct NewBadge: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .foregroundStyle(.white)
-            .background(Color.accentColor, in: Capsule())
+            .background(Color.red, in: Capsule())
     }
 }
 
