@@ -5,6 +5,7 @@ struct KPIHeaderView: View {
     let average: Double?
     let totalEcts: Double
     let targetEcts: Int
+    var lastUpdated: Date?
 
     private var ectsValueText: String {
         totalEcts.truncatingRemainder(dividingBy: 1) == 0
@@ -35,6 +36,12 @@ struct KPIHeaderView: View {
                         .padding(.horizontal, 28)
                 }
                 .frame(maxWidth: .infinity)
+            }
+
+            if let lastUpdated {
+                Text("Zuletzt aktualisiert \(lastUpdated.formatted(.relative(presentation: .named)))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(.vertical, 12)

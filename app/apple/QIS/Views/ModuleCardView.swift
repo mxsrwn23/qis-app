@@ -128,30 +128,59 @@ private struct AttemptRowView: View {
     let attempt: AttemptRow
     let visibleFields: Set<String>
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        HStack(spacing: 12) {
-            if visibleFields.contains("semester"), !attempt.semester.isEmpty {
-                Text(attempt.semester)
-                    .frame(minWidth: 72, alignment: .leading)
+        content
+            .font(.subheadline)
+            .foregroundStyle(attempt.isFailed ? .tertiary : .secondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .opacity(attempt.isFailed ? 0.6 : 1)
+    }
+
+    /// Bei sehr großen Schriftgrößen (Accessibility) bricht die Zeile vertikal um, damit Semester,
+    /// Note, Versuch und Datum nicht abgeschnitten werden oder sich überlappen.
+    @ViewBuilder
+    private var content: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                if visibleFields.contains("semester"), !attempt.semester.isEmpty { semesterText }
+                if visibleFields.contains("note") { noteText }
+                if visibleFields.contains("versuch"), !attempt.versuch.isEmpty { versuchText }
+                if visibleFields.contains("datum"), !attempt.datum.isEmpty { datumText }
             }
-            if visibleFields.contains("note") {
-                Text(attempt.note.isEmpty ? "–" : attempt.note)
-                    .strikethrough(attempt.isFailed)
-                    .frame(minWidth: 44, alignment: .leading)
-            }
-            if visibleFields.contains("versuch"), !attempt.versuch.isEmpty {
-                Text("Versuch \(attempt.versuch)")
-            }
-            Spacer(minLength: 4)
-            if visibleFields.contains("datum"), !attempt.datum.isEmpty {
-                Text(attempt.datum)
-                    .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(spacing: 12) {
+                if visibleFields.contains("semester"), !attempt.semester.isEmpty {
+                    semesterText.frame(minWidth: 72, alignment: .leading)
+                }
+                if visibleFields.contains("note") {
+                    noteText.frame(minWidth: 44, alignment: .leading)
+                }
+                if visibleFields.contains("versuch"), !attempt.versuch.isEmpty { versuchText }
+                Spacer(minLength: 4)
+                if visibleFields.contains("datum"), !attempt.datum.isEmpty { datumText }
             }
         }
-        .font(.subheadline)
-        .foregroundStyle(attempt.isFailed ? .tertiary : .secondary)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .opacity(attempt.isFailed ? 0.6 : 1)
+    }
+
+    private var semesterText: some View {
+        Text(attempt.semester)
+    }
+
+    private var noteText: some View {
+        Text(attempt.note.isEmpty ? "–" : attempt.note)
+            .strikethrough(attempt.isFailed)
+    }
+
+    private var versuchText: some View {
+        Text("Versuch \(attempt.versuch)")
+    }
+
+    private var datumText: some View {
+        Text(attempt.datum)
+            .foregroundStyle(.tertiary)
     }
 }

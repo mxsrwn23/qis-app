@@ -32,9 +32,22 @@ enum GradeCache {
     }
 
     static func canAttempt() -> Bool {
+        secondsUntilNextAttempt() == 0
+    }
+
+    /// Verbleibende Sekunden bis zum nächsten erlaubten Abrufversuch (0, wenn sofort möglich).
+    static func secondsUntilNextAttempt() -> Int {
         let timestamp = UserDefaults.standard.double(forKey: lastAttemptKey)
-        guard timestamp > 0 else { return true }
-        return Date().timeIntervalSince1970 - timestamp >= minRetryInterval
+        guard timestamp > 0 else { return 0 }
+        let remaining = minRetryInterval - (Date().timeIntervalSince1970 - timestamp)
+        return remaining > 0 ? Int(remaining.rounded(.up)) : 0
+    }
+
+    /// Zeitpunkt des zuletzt erfolgreich geladenen Notenspiegels, für die "Zuletzt aktualisiert"-Anzeige.
+    static func lastFetchDate() -> Date? {
+        let timestamp = UserDefaults.standard.double(forKey: lastFetchKey)
+        guard timestamp > 0 else { return nil }
+        return Date(timeIntervalSince1970: timestamp)
     }
 
     static func recordAttempt() {

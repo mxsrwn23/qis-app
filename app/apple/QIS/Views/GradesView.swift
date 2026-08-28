@@ -8,6 +8,7 @@ struct GradesView: View {
 
     @State private var showingSettings = false
     @State private var showingDisplayOptions = false
+    @State private var searchText = ""
     @State private var gradeSettings: GradeSettings
     @AppStorage("qis.filter") private var filter: GradesFilter = .all
     @AppStorage("qis.sort") private var sort: GradesSort = .none
@@ -25,7 +26,10 @@ struct GradesView: View {
     }
 
     private var visibleCards: [ModuleCardData] {
-        GradeCardBuilder.sorted(GradeCardBuilder.filtered(allCards, by: filter), by: sort)
+        let base = GradeCardBuilder.sorted(GradeCardBuilder.filtered(allCards, by: filter), by: sort)
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return base }
+        return base.filter { $0.moduleName.localizedCaseInsensitiveContains(query) }
     }
 
     private var average: Double? {
@@ -69,7 +73,7 @@ struct GradesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            KPIHeaderView(overlineText: overlineText, average: average, totalEcts: totalEcts, targetEcts: gradeSettings.effectiveTargetEcts)
+            KPIHeaderView(overlineText: overlineText, average: average, totalEcts: totalEcts, targetEcts: gradeSettings.effectiveTargetEcts, lastUpdated: GradeCache.lastFetchDate())
             FilterSortBar(filter: $filter, sort: $sort)
             Divider()
 
@@ -97,11 +101,16 @@ struct GradesView: View {
             }
             .overlay {
                 if visibleCards.isEmpty {
-                    ContentUnavailableView("Keine Module gefunden", systemImage: "tray")
+                    if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        ContentUnavailableView("Keine Module gefunden", systemImage: "tray")
+                    } else {
+                        ContentUnavailableView.search(text: searchText)
+                    }
                 }
             }
             .refreshable { await onRefresh() }
         }
+        .searchable(text: $searchText, prompt: "Modul suchen")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {

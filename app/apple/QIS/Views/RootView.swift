@@ -12,6 +12,8 @@ struct RootView: View {
     @State private var phase: Phase = .checkingCredentials
     @State private var refreshErrorMessage: String?
     @State private var newModuleKeys: Set<String> = []
+    @State private var noticeMessage: String?
+    @State private var showingHelp = false
 
     var body: some View {
         Group {
@@ -43,6 +45,7 @@ struct RootView: View {
                     )
                 }
                 .alert("Aktualisierung fehlgeschlagen", isPresented: refreshErrorBinding) {
+                    Button("Hilfe öffnen") { showingHelp = true }
                     Button("OK", role: .cancel) { }
                 } message: {
                     Text(refreshErrorMessage ?? "")
@@ -59,6 +62,33 @@ struct RootView: View {
                 }
                 .padding()
             }
+        }
+        .overlay(alignment: .top) {
+            if let noticeMessage {
+                NoticeBanner(message: noticeMessage)
+                    .padding(.horizontal, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: noticeMessage)
+        .sheet(isPresented: $showingHelp) {
+            NavigationStack {
+                HelpView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Fertig") { showingHelp = false }
+                        }
+                    }
+            }
+        }
+    }
+
+    /// Zeigt eine kurzlebige Hinweismeldung an und blendet sie nach wenigen Sekunden wieder aus.
+    private func showNotice(_ message: String) {
+        noticeMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if noticeMessage == message { noticeMessage = nil }
         }
     }
 
@@ -113,7 +143,12 @@ struct RootView: View {
     /// wirklich nötig, und fällt bei einem Fehler auf zuletzt gecachte Daten zurück, falls
     /// vorhanden -- kein automatischer Sofort-Retry.
     private func performFetch(credentials: Credentials, force: Bool) async {
-        guard GradeCache.canAttempt() else {
+        let wait = GradeCache.secondsUntilNextAttempt()
+        guard wait == 0 else {
+            // Nur bei bewussten Aktualisierungen Rückmeldung geben, nicht beim passiven App-Start.
+            if force {
+                showNotice("Bitte warte noch \(wait) \(wait == 1 ? "Sekunde" : "Sekunden"), bevor du erneut aktualisierst.")
+            }
             return
         }
         if !force, GradeCache.isFresh(), let cached = GradeCache.load() {
@@ -142,5 +177,29 @@ struct RootView: View {
         SessionCookieStore.clear()
         SeenGradesStore.clear()
         phase = .loggedOut
+    }
+}
+
+/// Kurzlebige Hinweiskarte am oberen Bildschirmrand, z. B. für die Aktualisierungs-Wartezeit.
+private struct NoticeBanner: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock")
+                .foregroundStyle(.secondary)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08))
+        }
+        .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
     }
 }
