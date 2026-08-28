@@ -14,6 +14,8 @@ targets:
     platform: [iOS, macOS]
     sources:
       - path: QIS
+        excludes:
+          - Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.maxsauerwein.qis
@@ -24,6 +26,9 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         INFOPLIST_KEY_CFBundleDisplayName: QIS+ Noten
         GENERATE_INFOPLIST_FILE: true
+        # Teil-Info.plist mit UIBackgroundModes + BGTaskSchedulerPermittedIdentifiers; wird von
+        # Xcode mit der generierten Info.plist zusammengeführt (für den Hintergrund-Notenabruf).
+        INFOPLIST_FILE: QIS/Info.plist
         INFOPLIST_KEY_UILaunchScreen_Generation: true
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         ENABLE_HARDENED_RUNTIME: YES

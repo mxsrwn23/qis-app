@@ -5,6 +5,10 @@ import Foundation
 /// kann GradesView frisch benotete Module mit einem Neu-Badge markieren.
 enum SeenGradesStore {
     private static let seenKey = "qis.seenGradedModules"
+    /// Eigene Baseline für Push-Benachrichtigungen, getrennt vom UI-Neu-Badge (`seenKey`). So kann
+    /// ein Hintergrund-Abruf über neue Noten benachrichtigen, ohne die Badge-Baseline zu verbrauchen,
+    /// und ohne bei jedem Lauf erneut über dieselbe Note zu benachrichtigen.
+    private static let notifiedKey = "qis.notifiedGradedModules"
 
     /// Vergleicht die aktuell benoteten Module mit dem zuletzt gemerkten Stand und liefert die
     /// Modulnamen, die neu hinzugekommen sind. Aktualisiert dabei den gemerkten Stand.
@@ -15,6 +19,9 @@ enum SeenGradesStore {
     static func newlyGradedModuleKeys(in table: GradeTable) -> Set<String> {
         let currentGraded = gradedModuleKeys(in: table)
         let defaults = UserDefaults.standard
+
+        // Was der Nutzer jetzt in der App sieht, muss später nicht mehr per Push gemeldet werden.
+        defaults.set(Array(currentGraded), forKey: notifiedKey)
 
         guard let stored = defaults.stringArray(forKey: seenKey) else {
             defaults.set(Array(currentGraded), forKey: seenKey)
@@ -27,8 +34,26 @@ enum SeenGradesStore {
         return newlyGraded
     }
 
+    /// Wie `newlyGradedModuleKeys`, aber gegen die Benachrichtigungs-Baseline (`notifiedKey`) und
+    /// ohne die UI-Baseline zu verändern. Für den Hintergrund-Abruf gedacht.
+    static func newlyGradedForNotification(in table: GradeTable) -> Set<String> {
+        let currentGraded = gradedModuleKeys(in: table)
+        let defaults = UserDefaults.standard
+
+        guard let stored = defaults.stringArray(forKey: notifiedKey) else {
+            defaults.set(Array(currentGraded), forKey: notifiedKey)
+            return []
+        }
+
+        let newly = currentGraded.subtracting(Set(stored))
+        defaults.set(Array(currentGraded), forKey: notifiedKey)
+        return newly
+    }
+
     static func clear() {
-        UserDefaults.standard.removeObject(forKey: seenKey)
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: seenKey)
+        defaults.removeObject(forKey: notifiedKey)
     }
 
     /// Baut die Modulkarten wie die Anzeige und liefert die Namen aller Module, für die bereits eine
