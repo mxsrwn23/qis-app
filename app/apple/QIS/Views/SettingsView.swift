@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var password = ""
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var notificationsEnabled = NotificationService.isEnabled
+    @State private var showingNotificationDeniedAlert = false
 
     var body: some View {
         NavigationStack {
@@ -77,6 +79,14 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Neue Noten melden", isOn: $notificationsEnabled)
+                } header: {
+                    Text("Benachrichtigungen")
+                } footer: {
+                    Text("Die App prüft im Hintergrund gelegentlich auf neue Noten und benachrichtigt dich. Der genaue Zeitpunkt wird vom System bestimmt, Meldungen können sich daher verzögern.")
+                }
+
+                Section {
                     NavigationLink {
                         HelpView()
                     } label: {
@@ -93,6 +103,14 @@ struct SettingsView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fertig") { dismiss() }
                 }
+            }
+            .onChange(of: notificationsEnabled) { _, enabled in
+                Task { await updateNotifications(enabled: enabled) }
+            }
+            .alert("Benachrichtigungen deaktiviert", isPresented: $showingNotificationDeniedAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Erlaube Benachrichtigungen für QIS+ in den Systemeinstellungen, um über neue Noten informiert zu werden.")
             }
         }
         #if os(macOS)
@@ -112,6 +130,25 @@ struct SettingsView: View {
             get: { gradeSettings.targetEcts > 0 ? String(gradeSettings.targetEcts) : "" },
             set: { gradeSettings.targetEcts = Int($0) ?? 0 }
         )
+    }
+
+    /// Schaltet Benachrichtigungen ein/aus: fragt beim Aktivieren die Systemberechtigung an und
+    /// plant den Hintergrund-Abruf, oder bricht ihn beim Deaktivieren ab.
+    private func updateNotifications(enabled: Bool) async {
+        if enabled {
+            let granted = await NotificationService.requestAuthorization()
+            guard granted else {
+                NotificationService.setEnabled(false)
+                notificationsEnabled = false
+                showingNotificationDeniedAlert = true
+                return
+            }
+            NotificationService.setEnabled(true)
+            BackgroundGradeRefresher.schedule()
+        } else {
+            NotificationService.setEnabled(false)
+            BackgroundGradeRefresher.cancel()
+        }
     }
 
     private func save() {
