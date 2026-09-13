@@ -66,9 +66,9 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
         if (category != null) {
             holder.statusChip.setVisibility(View.VISIBLE);
             holder.statusChip.setText(card.statusLabel());
-            holder.statusChip.setTextColor(GradeStyling.accent(category.colorKey, customColors));
+            holder.statusChip.setTextColor(GradeStyling.accent(category, customColors));
             holder.statusChip.setBackground(
-                    pillDrawable(GradeStyling.backgroundTint(category.colorKey, customColors)));
+                    pillDrawable(GradeStyling.backgroundTint(category, customColors)));
         } else {
             holder.statusChip.setVisibility(View.GONE);
         }

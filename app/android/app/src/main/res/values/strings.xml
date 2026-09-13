@@ -38,4 +38,12 @@
     <string name="semester_hint">Semester</string>
     <string name="target_ects_hint">Ziel-ECTS (automatisch)</string>
     <string name="new_badge">Neu</string>
+    <string name="notifications_section_title">Benachrichtigungen</string>
+    <string name="notify_new_grades">Neue Noten melden</string>
+    <string name="notifications_footer">Die App prüft im Hintergrund gelegentlich auf neue Noten und benachrichtigt dich. Der genaue Zeitpunkt wird vom System bestimmt, Meldungen können sich daher verzögern.</string>
+    <string name="notifications_denied_message">Erlaube Benachrichtigungen für QIS+ in den Systemeinstellungen, um über neue Noten informiert zu werden.</string>
+    <string name="notification_single_title">Neue Note</string>
+    <string name="notification_multiple_title">Neue Noten</string>
+    <string name="debug_test_refresh">Hintergrund-Abruf jetzt testen (Debug)</string>
+    <string name="debug_reset_baseline">Benachrichtigungs-Baseline zurücksetzen (Debug)</string>
 </resources>

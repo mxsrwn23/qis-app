@@ -34,7 +34,13 @@ public final class GradeStyling {
     }
 
     public enum StatusCategory {
-        BE(ColorKey.BE), PV(ColorKey.PV), FAIL(ColorKey.FAIL), AN(ColorKey.AN);
+        BE(ColorKey.BE), PV(ColorKey.PV), FAIL(ColorKey.FAIL), AN(ColorKey.AN),
+        /** Nicht zur Prüfung zugelassen (NZ) -- die Prüfungsvorleistung wurde nicht bekommen. Hat
+         *  keine anpassbare ColorKey, siehe accent(StatusCategory, ...) unten für die feste Farbe. */
+        NOT_ADMITTED(null),
+        /** Prüfung trotz Zulassung nicht geschrieben (Rücktritt, nicht erschienen, krank), daher
+         *  kommt in diesem Semester kein Ergebnis mehr. Ebenfalls keine anpassbare ColorKey. */
+        NO_RESULT(null);
 
         public final ColorKey colorKey;
 
@@ -42,6 +48,9 @@ public final class GradeStyling {
             this.colorKey = colorKey;
         }
     }
+
+    private static final int NOT_ADMITTED_COLOR = 0xFFB2661F;
+    private static final int NO_RESULT_COLOR = 0xFF757575;
 
     private static final String[] SECTION_PREFIXES = {"kernmodule", "pflichtmodule", "wahlpflichtmodule"};
 
@@ -55,6 +64,23 @@ public final class GradeStyling {
 
     public static int backgroundTint(ColorKey key, Map<String, String> customColors) {
         return withAlpha(accent(key, customColors), 36); // ~14 % von 255
+    }
+
+    /** Farbe pro Status-Kategorie. "Nicht zugelassen" bekommt ein aufmerksamkeitsstarkes gedämpftes
+     *  Amber (ein Hinweis, der auffallen soll), "Kein Ergebnis" ein neutrales Grau. Beide heben sich
+     *  klar vom Blau des offenen Status ab. Entspricht GradeStyling.swifts
+     *  accent(for: GradeStatusCategory, ...) auf iOS. */
+    public static int accent(StatusCategory category, Map<String, String> customColors) {
+        switch (category) {
+            case NOT_ADMITTED: return NOT_ADMITTED_COLOR;
+            case NO_RESULT: return NO_RESULT_COLOR;
+            default:
+                return category.colorKey != null ? accent(category.colorKey, customColors) : NO_RESULT_COLOR;
+        }
+    }
+
+    public static int backgroundTint(StatusCategory category, Map<String, String> customColors) {
+        return withAlpha(accent(category, customColors), 36);
     }
 
     private static Integer parseHex(String hex) {

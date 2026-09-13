@@ -1,7 +1,9 @@
 package dev.maxsauerwein.qis.util;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -17,6 +19,13 @@ import dev.maxsauerwein.qis.storage.GradeSettingsStore;
  * Wahlpflichtmodule-Abschnitt versehen).
  */
 public final class GradeCardBuilder {
+
+    /** NZ = nicht zugelassen: die Prüfungsvorleistung wurde nicht bekommen, daher gab es keine
+     *  Zulassung zur Prüfung. Eigener Status "Nicht zugelassen". */
+    private static final Set<String> NOT_ADMITTED_REMARKS = new HashSet<>(Collections.singletonList("nz"));
+    /** RT = Rücktritt, NE = nicht erschienen, KR = krank: trotz Zulassung (PV vorhanden) wurde die
+     *  Prüfung nicht geschrieben. Status "Kein Ergebnis". */
+    private static final Set<String> WITHDRAWN_REMARKS = new HashSet<>(Arrays.asList("rt", "ne", "kr"));
 
     private GradeCardBuilder() {
     }
@@ -89,6 +98,14 @@ public final class GradeCardBuilder {
 
             String moduleName = collapseWhitespace(value(prüfungstextIndex, row).replace("Modul:", ""));
 
+            // Über alle (ungefilterten) Detailzeilen scannen, da der Vermerk in einer beliebigen
+            // Spalte stehen kann und auch für ausgeblendete Studienleistungen relevant bleibt.
+            GradeStyling.StatusCategory remarkStatus = containsRemark(detailRows, NOT_ADMITTED_REMARKS)
+                    ? GradeStyling.StatusCategory.NOT_ADMITTED
+                    : containsRemark(detailRows, WITHDRAWN_REMARKS)
+                            ? GradeStyling.StatusCategory.NO_RESULT
+                            : null;
+
             cards.add(new ModuleCardData(
                     currentSectionTitle,
                     moduleName,
@@ -96,7 +113,8 @@ public final class GradeCardBuilder {
                     value(statusIndex, row),
                     value(ectsIndex, row).trim(),
                     attempts,
-                    newModuleKeys.contains(moduleName)
+                    newModuleKeys.contains(moduleName),
+                    remarkStatus
             ));
         }
 
@@ -198,6 +216,17 @@ public final class GradeCardBuilder {
             return (firstTwoDigits - 1) * 2 + 1;
         }
         return Integer.MIN_VALUE;
+    }
+
+    private static boolean containsRemark(List<List<String>> detailRows, Set<String> remarks) {
+        for (List<String> detailRow : detailRows) {
+            for (String cell : detailRow) {
+                if (remarks.contains(cell.trim().toLowerCase(Locale.GERMAN))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static String value(int index, List<String> row) {
