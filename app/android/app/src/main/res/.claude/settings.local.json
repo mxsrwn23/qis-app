@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm /Users/max/Documents/projekte/qis_project/qis-app/app/android/app/src/main/res/drawable/ic_launcher_foreground.xml)",
+      "Bash(cp /Users/max/Downloads/AppIcons/android/adaptive-foreground.png /Users/max/Documents/projekte/qis_project/qis-app/app/android/app/src/main/res/drawable/ic_launcher_foreground.png)",
+      "Bash(python3 *)"
+    ]
+  }
+}
