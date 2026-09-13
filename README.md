@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="app/apple/QIS/Assets.xcassets/LargeIcon.imageset/icon-256.jpg" width="96" height="96" alt="QIS+ Logo">
+  <img src="icon-128.png" width="96" height="96" alt="QIS+ Logo">
   
   <h1>QIS+ Noten</h1>
 
