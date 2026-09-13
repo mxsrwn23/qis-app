@@ -6,6 +6,24 @@ import UserNotifications
 enum NotificationService {
     private static let enabledKey = "qis.notificationsEnabled"
 
+    /// Ohne gesetzten Delegate unterdrückt UNUserNotificationCenter lokale Notifications lautlos,
+    /// solange die App im Vordergrund ist (kein Banner, kein Sound, kein Fehler). Muss beim
+    /// App-Start gesetzt werden, damit Benachrichtigungen auch bei geöffneter App sichtbar sind.
+    private static let foregroundPresenter = ForegroundPresenter()
+
+    static func configureForegroundPresentation() {
+        UNUserNotificationCenter.current().delegate = foregroundPresenter
+    }
+
+    private final class ForegroundPresenter: NSObject, UNUserNotificationCenterDelegate {
+        func userNotificationCenter(
+            _ center: UNUserNotificationCenter,
+            willPresent notification: UNNotification
+        ) async -> UNNotificationPresentationOptions {
+            [.banner, .sound, .list]
+        }
+    }
+
     /// Vom Nutzer in den Einstellungen gewählter Wunsch, über neue Noten benachrichtigt zu werden.
     static var isEnabled: Bool {
         UserDefaults.standard.bool(forKey: enabledKey)

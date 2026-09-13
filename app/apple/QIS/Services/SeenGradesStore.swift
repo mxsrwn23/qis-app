@@ -56,12 +56,22 @@ enum SeenGradesStore {
         defaults.removeObject(forKey: notifiedKey)
     }
 
+    #if DEBUG
+    /// Setzt die Push-Baseline auf leer (statt sie zu entfernen wie `clear()`), damit der nächste
+    /// Abruf alle aktuell benoteten Module als "neu" erkennt. `clear()` allein reicht zum Testen
+    /// nicht aus, weil ein fehlender Key als "allererster Aufruf" behandelt wird und bewusst keine
+    /// Benachrichtigung auslöst (siehe `newlyGradedForNotification`).
+    static func debugForceEmptyNotifiedBaseline() {
+        UserDefaults.standard.set([String](), forKey: notifiedKey)
+    }
+    #endif
+
     /// Baut die Modulkarten wie die Anzeige und liefert die Namen aller Module, für die bereits eine
     /// Note vorliegt -- entweder als finales Ergebnis (bestanden/nicht bestanden) oder als numerische
     /// Note in einer Versuchszeile, während der Modulstatus noch "offen" ist. So wird das Neu-Badge
     /// schon gesetzt, sobald die Note unten erscheint, und nicht erst wenn der Status oben wechselt.
     private static func gradedModuleKeys(in table: GradeTable) -> Set<String> {
-        let cards = GradeCardBuilder.buildCards(table: table, settings: GradeSettings())
+        let cards = GradeCardBuilder.buildCards(table: table, settings: GradeSettings.load())
         let graded = cards.filter { $0.statusCategory == .be || $0.statusCategory == .fail || $0.hasGradeEntered }
         return Set(graded.map(\.moduleName))
     }

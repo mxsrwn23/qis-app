@@ -1,4 +1,5 @@
 import Foundation
+import os
 #if os(iOS)
 import BackgroundTasks
 #endif
@@ -11,8 +12,17 @@ enum BackgroundGradeRefresher {
     /// Muss identisch in der Info.plist unter `BGTaskSchedulerPermittedIdentifiers` hinterlegt sein.
     static let taskIdentifier = "dev.maxsauerwein.qis.refresh"
 
+    private static let logger = Logger(subsystem: "dev.maxsauerwein.qis", category: "BackgroundGradeRefresher")
+
     /// Frühester Abstand bis zum nächsten Lauf. iOS behandelt dies nur als Untergrenze.
+    /// Im Debug-Build kurz gehalten, damit sich der echte Hintergrund-Lauf beim Testen nicht durch
+    /// jedes erneute Backgrounding um weitere 4h verschiebt (jedes `schedule()` ersetzt die zuvor
+    /// eingeplante Anfrage).
+    #if DEBUG
+    private static let earliestInterval: TimeInterval = 5 * 60
+    #else
     private static let earliestInterval: TimeInterval = 4 * 60 * 60
+    #endif
 
     /// Registriert den Task-Handler. Muss vor Abschluss des App-Starts aufgerufen werden.
     static func register() {
@@ -63,18 +73,28 @@ enum BackgroundGradeRefresher {
     /// Holt den Notenspiegel, aktualisiert den Cache und benachrichtigt über neu benotete Module.
     /// Nutzt die gespeicherte Session (leichter Abruf ohne vollen SAML-Login, wenn möglich).
     static func performRefresh() async {
-        guard NotificationService.isEnabled, let credentials = KeychainStore.load() else { return }
+        logger.log("performRefresh gestartet")
+        guard NotificationService.isEnabled else {
+            logger.log("Abbruch: Benachrichtigungen sind deaktiviert")
+            return
+        }
+        guard let credentials = KeychainStore.load() else {
+            logger.error("Abbruch: keine Credentials im Keychain gefunden")
+            return
+        }
         do {
             let table = try await QISClient().fetchGrades(
                 username: credentials.username, password: credentials.password
             )
             GradeCache.save(table)
             let newModules = SeenGradesStore.newlyGradedForNotification(in: table)
+            logger.log("Abruf erfolgreich, \(newModules.count) neu benotete Module")
             if !newModules.isEmpty {
                 await NotificationService.notifyNewGrades(newModules.sorted())
             }
         } catch {
             // Hintergrundfehler still ignorieren; beim nächsten Lauf wird es erneut versucht.
+            logger.error("Abbruch durch Fehler: \(error.localizedDescription)")
         }
     }
 }

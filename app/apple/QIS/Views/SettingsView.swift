@@ -11,6 +11,9 @@ struct SettingsView: View {
     @State private var errorMessage: String?
     @State private var notificationsEnabled = NotificationService.isEnabled
     @State private var showingNotificationDeniedAlert = false
+    #if DEBUG
+    @State private var debugRefreshStatus: String?
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -80,6 +83,24 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Neue Noten melden", isOn: $notificationsEnabled)
+                    #if DEBUG
+                    Button("Hintergrund-Abruf jetzt testen (Debug)") {
+                        debugRefreshStatus = "Läuft…"
+                        Task {
+                            await BackgroundGradeRefresher.performRefresh()
+                            debugRefreshStatus = "Fertig – Details in der Xcode-Konsole"
+                        }
+                    }
+                    Button("Benachrichtigungs-Baseline zurücksetzen (Debug)") {
+                        SeenGradesStore.debugForceEmptyNotifiedBaseline()
+                        debugRefreshStatus = "Baseline geleert – jetzt \"Hintergrund-Abruf jetzt testen\" tippen"
+                    }
+                    if let debugRefreshStatus {
+                        Text(debugRefreshStatus)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    #endif
                 } header: {
                     Text("Benachrichtigungen")
                 } footer: {

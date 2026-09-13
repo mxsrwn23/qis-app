@@ -7,6 +7,8 @@ struct QISApp: App {
     init() {
         // Muss vor Abschluss des App-Starts registriert werden, damit iOS den Handler kennt.
         BackgroundGradeRefresher.register()
+        // Ohne Delegate werden lokale Notifications bei geöffneter App lautlos unterdrückt.
+        NotificationService.configureForegroundPresentation()
     }
 
     var body: some Scene {

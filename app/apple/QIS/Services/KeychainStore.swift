@@ -18,7 +18,10 @@ enum KeychainStore {
         // Schließt diesen Eintrag von Geräte-/iCloud-Backups aus. Andernfalls wäre das
         // SSO-Passwort aus einem wiederhergestellten (oder kompromittierten) Backup auf einem
         // anderen Gerät lesbar.
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        // AfterFirstUnlock (statt WhenUnlocked): BGAppRefreshTask läuft oft bei gesperrtem
+        // Gerät, sonst schlägt der Keychain-Zugriff im Hintergrund-Task fehl und
+        // Benachrichtigungen bleiben stumm aus.
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(attributes as CFDictionary, nil)
     }
 
