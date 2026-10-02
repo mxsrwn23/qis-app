@@ -1,7 +1,7 @@
 <div align="center">
   <img src="icon-128.png" width="96" height="96" alt="QIS+ Logo">
   
-  <h1>QIS+ Noten</h1>
+  <h1>QIS+ Noten <sup>Beta</sup></h1>
 
   <p><strong>Der QIS-Notenspiegel der Hochschule Trier, als native App.</strong></p>
 
@@ -15,8 +15,11 @@
     <img src="https://img.shields.io/badge/iOS-17%2B-blue" alt="iOS 17+">
     <img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+">
     <img src="https://img.shields.io/badge/Android-8.0%2B-green" alt="Android 8.0+ (API 26)">
+    <a href="https://testflight.apple.com/join/DEIN_CODE"><img src="https://img.shields.io/badge/TestFlight-Beta-0D96F6?logo=apple&logoColor=white" alt="TestFlight Beta"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT%20(Non--Commercial)-green" alt="License: Modified MIT (Non-Commercial)"></a>
   </p>
+
+  <p><strong>🧪 Jetzt in der Beta:</strong> <a href="https://testflight.apple.com/join/d7K5aMV9">iOS-Beta über TestFlight testen</a> · <a href="#beta-testen">Details</a></p>
 
   <p><em>Inoffizielles, privates Projekt – keine offizielle Verbindung zur Hochschule Trier.</em></p>
 </div>
@@ -26,6 +29,7 @@
 ## Inhalt
 
 - [Features](#features)
+- [Beta testen](#beta-testen)
 - [Farblegende (Standardfarben)](#farblegende-standardfarben)
 - [Installation](#installation)
 - [Datenschutz](#datenschutz)
@@ -46,6 +50,24 @@
 - **Eigene Farbschemata** – Alle Statusfarben (bestanden/offen/nicht bestanden/angemeldet) lassen sich in der Ansicht anpassen und zurücksetzen.
 - **Individuelles Aufräumen** – Studienleistungen ausblenden, einzelne Spalten (Semester/Note/Versuch/Datum) ein-/ausblenden, Notenschnitt wahlweise aus allen Versuchen, nur dem letzten oder nur der besten Note berechnen.
 - **Pull-to-Refresh** – Zieht neu und meldet sich dabei erneut bei QIS an, ohne dass unnötige SSO-Logins beim bloßen Navigieren durch die App ausgelöst werden.
+
+---
+
+## Beta testen
+
+Du willst die iOS-App ausprobieren, ohne sie selbst zu bauen? Über TestFlight kannst du der Beta beitreten:
+
+<p align="center">
+  <a href="https://testflight.apple.com/join/d7K5aMV9">
+    <img src="https://img.shields.io/badge/TestFlight-Beta%20beitreten-0D96F6?logo=apple&logoColor=white" alt="TestFlight Beta beitreten">
+  </a>
+</p>
+
+1. **TestFlight** aus dem App Store installieren
+2. Den Link oben auf dem iPhone/iPad öffnen und **Annehmen** tippen
+3. **QIS+ Noten** installieren
+
+> Voraussetzung: iOS 17+. Die Beta-Plätze sind begrenzt (max. 10.000 Tester), Builds laufen nach 90 Tage ab. Feedback und Bugs gerne als [Issue](../../issues) oder direkt über TestFlight ("Feedback senden").
 
 ---
 
