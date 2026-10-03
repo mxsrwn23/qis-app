@@ -15,7 +15,7 @@
     <img src="https://img.shields.io/badge/iOS-17%2B-blue" alt="iOS 17+">
     <img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+">
     <img src="https://img.shields.io/badge/Android-8.0%2B-green" alt="Android 8.0+ (API 26)">
-    <a href="https://testflight.apple.com/join/DEIN_CODE"><img src="https://img.shields.io/badge/TestFlight-Beta-0D96F6?logo=apple&logoColor=white" alt="TestFlight Beta"></a>
+    <a href="https://testflight.apple.com/join/d7K5aMV9"><img src="https://img.shields.io/badge/TestFlight-Beta-0D96F6?logo=apple&logoColor=white" alt="TestFlight Beta"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT%20(Non--Commercial)-green" alt="License: Modified MIT (Non-Commercial)"></a>
   </p>
 
@@ -36,7 +36,7 @@
 - [Projektstruktur](#projektstruktur)
 - [Für Entwickler:innen](#für-entwicklerinnen)
 - [Troubleshooting](#troubleshooting)
-- [Hinweis](#hinweis)
+- [Hinweis & Disclaimer](#hinweis--disclaimer)
 
 ---
 
@@ -169,8 +169,8 @@ qis-app/
 
 ---
 
-## Hinweis
+## Hinweis & Disclaimer
 
-Dieses Projekt ist inoffiziell und steht in keiner offiziellen Verbindung zur Hochschule Trier.
+Diese Software ist ein inoffizielles Open-Source-Projekt und steht in keinerlei Verbindung zur Hochschule Trier. Die Entwicklung erfolgt privat und ohne Gewähr. Es werden keine Zugangsdaten oder personenbezogenen Daten auf externen Servern gespeichert.
 
 Veröffentlicht unter der [Modified MIT License (Non-Commercial)](LICENSE).
