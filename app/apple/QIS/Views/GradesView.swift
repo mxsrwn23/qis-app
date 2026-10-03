@@ -10,6 +10,9 @@ struct GradesView: View {
     @State private var showingDisplayOptions = false
     @State private var searchText = ""
     @State private var gradeSettings: GradeSettings
+    @State private var archivedModuleKeys = ModuleArchiveStore.load()
+    @State private var excludedFromAverageModuleKeys = AverageInclusionStore.loadExcludedModuleKeys()
+    @State private var isArchiveExpanded = false
     @AppStorage("qis.filter") private var filter: GradesFilter = .all
     @AppStorage("qis.sort") private var sort: GradesSort = .none
 
@@ -26,14 +29,21 @@ struct GradesView: View {
     }
 
     private var visibleCards: [ModuleCardData] {
-        let base = GradeCardBuilder.sorted(GradeCardBuilder.filtered(allCards, by: filter), by: sort)
-        let query = searchText.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return base }
-        return base.filter { $0.moduleName.localizedCaseInsensitiveContains(query) }
+        let activeCards = allCards.filter { !archivedModuleKeys.contains($0.id) }
+        let base = GradeCardBuilder.sorted(GradeCardBuilder.filtered(activeCards, by: filter), by: sort)
+        return cardsMatchingSearch(base)
+    }
+
+    private var archivedCards: [ModuleCardData] {
+        cardsMatchingSearch(allCards.filter { archivedModuleKeys.contains($0.id) })
     }
 
     private var average: Double? {
-        GradeAnalysis.average(table: gradeTable, mode: gradeSettings.averageMode)
+        GradeAnalysis.average(
+            table: gradeTable,
+            mode: gradeSettings.averageMode,
+            excludedModuleKeys: excludedFromAverageModuleKeys
+        )
     }
 
     private var totalEcts: Double {
@@ -54,21 +64,38 @@ struct GradesView: View {
     }
 
     private var displaySections: [DisplaySection] {
-        guard sort == .none else {
+        switch sort {
+        case .none:
+            return groupedSections(for: visibleCards) { $0.sectionTitle }
+        case .semester:
+            return groupedSections(for: visibleCards) { semesterTitle(for: $0) }
+        case .grade:
             return [DisplaySection(title: nil, cards: visibleCards)]
         }
+    }
+
+    private func groupedSections(
+        for cards: [ModuleCardData],
+        title: (ModuleCardData) -> String?
+    ) -> [DisplaySection] {
         var sections: [DisplaySection] = []
-        for card in visibleCards {
-            if sections.isEmpty || sections[sections.count - 1].title != card.sectionTitle {
-                sections.append(DisplaySection(title: card.sectionTitle, cards: [card]))
+        for card in cards {
+            let sectionTitle = title(card)
+            if sections.isEmpty || sections[sections.count - 1].title != sectionTitle {
+                sections.append(DisplaySection(title: sectionTitle, cards: [card]))
             } else {
                 sections[sections.count - 1] = DisplaySection(
-                    title: sections[sections.count - 1].title,
+                    title: sectionTitle,
                     cards: sections[sections.count - 1].cards + [card]
                 )
             }
         }
         return sections
+    }
+
+    private func semesterTitle(for card: ModuleCardData) -> String {
+        let semester = card.attempts.last?.semester.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return semester.isEmpty ? "Ohne Semester" : semester
     }
 
     var body: some View {
@@ -77,30 +104,60 @@ struct GradesView: View {
             FilterSortBar(filter: $filter, sort: $sort)
             Divider()
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(displaySections.enumerated()), id: \.offset) { _, section in
-                        if let title = section.title {
-                            Text(title)
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 16)
-                                .padding(.top, 4)
-                        }
+            List {
+                ForEach(displaySections, id: \.title) { section in
+                    Section {
                         ForEach(section.cards) { card in
-                            ModuleCardView(
-                                card: card,
-                                visibleFields: gradeSettings.visibleAttemptFields,
-                                customColors: gradeSettings.customColors
-                            )
-                            .padding(.horizontal, 16)
+                            moduleCard(card)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button {
+                                        archive(card)
+                                    } label: {
+                                        Label("Archivieren", systemImage: "archivebox")
+                                    }
+                                    .tint(.orange)
+                                }
+                        }
+                    } header: {
+                        if let title = section.title {
+                            if sort == .semester {
+                                SemesterDivider(title: title)
+                            } else {
+                                Text(title)
+                            }
                         }
                     }
                 }
-                .padding(.vertical, 12)
+
+                if !archivedCards.isEmpty {
+                    Section {
+                        ArchiveToggleRow(
+                            count: archivedCards.count,
+                            isExpanded: isArchiveExpanded,
+                            toggleArchive: { isArchiveExpanded.toggle() }
+                        )
+                        .listRowSeparator(.hidden)
+
+                        if isArchiveExpanded {
+                            ForEach(archivedCards) { card in
+                                moduleCard(card)
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                        Button {
+                                            restore(card)
+                                        } label: {
+                                            Label("Einblenden", systemImage: "arrow.uturn.backward")
+                                        }
+                                        .tint(.green)
+                                    }
+                            }
+                        }
+                    }
+                }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .overlay {
-                if visibleCards.isEmpty {
+                if visibleCards.isEmpty && archivedCards.isEmpty {
                     if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
                         ContentUnavailableView("Keine Module gefunden", systemImage: "tray")
                     } else {
@@ -139,5 +196,93 @@ struct GradesView: View {
         .onChange(of: gradeSettings) { _, newValue in
             newValue.save()
         }
+    }
+
+    @ViewBuilder
+    private func moduleCard(_ card: ModuleCardData) -> some View {
+        ModuleCardView(
+            card: card,
+            visibleFields: gradeSettings.visibleAttemptFields,
+            customColors: gradeSettings.customColors,
+            isIncludedInAverage: averageInclusionBinding(for: card)
+        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    private func cardsMatchingSearch(_ cards: [ModuleCardData]) -> [ModuleCardData] {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return cards }
+        return cards.filter { $0.moduleName.localizedCaseInsensitiveContains(query) }
+    }
+
+    private func averageInclusionBinding(for card: ModuleCardData) -> Binding<Bool> {
+        Binding(
+            get: { !excludedFromAverageModuleKeys.contains(card.id) },
+            set: { isIncluded in
+                if isIncluded {
+                    excludedFromAverageModuleKeys.remove(card.id)
+                } else {
+                    excludedFromAverageModuleKeys.insert(card.id)
+                }
+                AverageInclusionStore.saveExcludedModuleKeys(excludedFromAverageModuleKeys)
+            }
+        )
+    }
+
+    private func archive(_ card: ModuleCardData) {
+        archivedModuleKeys.insert(card.id)
+        ModuleArchiveStore.save(archivedModuleKeys)
+    }
+
+    private func restore(_ card: ModuleCardData) {
+        archivedModuleKeys.remove(card.id)
+        ModuleArchiveStore.save(archivedModuleKeys)
+    }
+}
+
+private struct SemesterDivider: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Divider()
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .textCase(nil)
+            Divider()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+}
+
+private struct ArchiveToggleRow: View {
+    let count: Int
+    let isExpanded: Bool
+    let toggleArchive: () -> Void
+
+    var body: some View {
+        Button(action: toggleArchive) {
+            HStack(spacing: 12) {
+                Label("Archiviert", systemImage: "archivebox")
+                    .font(.headline)
+                Spacer()
+                Text("\(count)")
+                    .foregroundStyle(.secondary)
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Archivierte Module")
+        .accessibilityValue("\(count) Module")
     }
 }

@@ -118,7 +118,6 @@ enum GradeCardBuilder {
     static func filtered(_ cards: [ModuleCardData], by filter: GradesFilter) -> [ModuleCardData] {
         switch filter {
         case .all: return cards
-        case .passed: return cards.filter { $0.statusCategory == .be }
         case .open: return cards.filter { $0.statusCategory != .be }
         }
     }

@@ -4,14 +4,21 @@ struct ModuleCardView: View {
     let card: ModuleCardData
     let visibleFields: Set<String>
     let customColors: [String: String]
+    @Binding var isIncludedInAverage: Bool
 
     @State private var isExpanded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(card: ModuleCardData, visibleFields: Set<String>, customColors: [String: String]) {
+    init(
+        card: ModuleCardData,
+        visibleFields: Set<String>,
+        customColors: [String: String],
+        isIncludedInAverage: Binding<Bool>
+    ) {
         self.card = card
         self.visibleFields = visibleFields
         self.customColors = customColors
+        _isIncludedInAverage = isIncludedInAverage
         _isExpanded = State(initialValue: card.isNew)
     }
 
@@ -30,17 +37,27 @@ struct ModuleCardView: View {
             .accessibilityAddTraits(isExpanded ? .isSelected : [])
             .accessibilityHint(isExpanded ? "Zugeklappt zeigen" : "Versuche anzeigen")
 
-            if isExpanded && !card.attempts.isEmpty {
+            if isExpanded {
                 Divider().padding(.horizontal, 16)
-                VStack(spacing: 0) {
-                    ForEach(Array(card.attempts.enumerated()), id: \.element.id) { offset, attempt in
-                        AttemptRowView(attempt: attempt, visibleFields: visibleFields)
-                        if offset < card.attempts.count - 1 {
-                            Divider().padding(.leading, 16)
+
+                if !card.attempts.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(Array(card.attempts.enumerated()), id: \.element.id) { offset, attempt in
+                            AttemptRowView(attempt: attempt, visibleFields: visibleFields)
+                            if offset < card.attempts.count - 1 {
+                                Divider().padding(.leading, 16)
+                            }
                         }
                     }
+                    .padding(.vertical, 4)
+
+                    Divider().padding(.horizontal, 16)
                 }
-                .padding(.vertical, 4)
+
+                Toggle("In Schnitt einbeziehen", isOn: $isIncludedInAverage)
+                    .font(.subheadline)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
             }
         }
         .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

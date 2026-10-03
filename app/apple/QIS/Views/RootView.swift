@@ -174,6 +174,8 @@ struct RootView: View {
     private func logout() {
         KeychainStore.clear()
         GradeCache.clear()
+        ModuleArchiveStore.clear()
+        AverageInclusionStore.clear()
         SessionCookieStore.clear()
         SeenGradesStore.clear()
         phase = .loggedOut
