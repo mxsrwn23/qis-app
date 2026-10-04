@@ -12,14 +12,15 @@ enum GradeCache {
     private static let lastFetchKey = "qis.cache.lastFetch"
     private static let lastAttemptKey = "qis.cache.lastAttempt"
 
-    static func load() -> GradeTable? {
+    /// Lädt alle beim letzten Abruf gecachten (Abschluss, Fach)-Tabellen (meist genau eine).
+    static func load() -> [GradeTable]? {
         guard let data = UserDefaults.standard.data(forKey: tableKey) else { return nil }
-        return try? JSONDecoder().decode(GradeTable.self, from: data)
+        return try? JSONDecoder().decode([GradeTable].self, from: data)
     }
 
-    static func save(_ table: GradeTable) {
+    static func save(_ tables: [GradeTable]) {
         let defaults = UserDefaults.standard
-        if let data = try? JSONEncoder().encode(table) {
+        if let data = try? JSONEncoder().encode(tables) {
             defaults.set(data, forKey: tableKey)
         }
         defaults.set(Date().timeIntervalSince1970, forKey: lastFetchKey)

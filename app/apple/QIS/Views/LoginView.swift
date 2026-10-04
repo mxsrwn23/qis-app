@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LoginView: View {
-    let onLoginSucceeded: (Credentials, GradeTable) -> Void
+    let onLoginSucceeded: (Credentials, [GradeTable]) -> Void
 
     private enum Field {
         case username, password
@@ -137,11 +137,11 @@ struct LoginView: View {
         let passwordValue = password
         Task {
             do {
-                let gradeTable = try await QISClient().fetchGrades(
+                let gradeTables = try await QISClient().fetchGrades(
                     username: usernameValue, password: passwordValue, allowSessionReuse: false
                 )
                 isLoading = false
-                onLoginSucceeded(Credentials(username: usernameValue, password: passwordValue), gradeTable)
+                onLoginSucceeded(Credentials(username: usernameValue, password: passwordValue), gradeTables)
             } catch {
                 isLoading = false
                 errorMessage = error.localizedDescription

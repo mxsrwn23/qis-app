@@ -46,12 +46,9 @@ struct SettingsView: View {
                     .disabled(username.isEmpty || isSaving)
                 }
 
-                Section("Profil") {
-                    TextField("Studiengang (z. B. B.Sc. Informatik)", text: $gradeSettings.studiengang)
-                        #if os(macOS)
-                        .textFieldStyle(.roundedBorder)
-                        #endif
-                        .autocorrectionDisabled()
+                Section {
+                    degreeTypeRow
+                    fachRow
                     HStack {
                         Text("Semester")
                         Spacer()
@@ -75,6 +72,12 @@ struct SettingsView: View {
                             #endif
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
+                    }
+                } header: {
+                    Text("Profil")
+                } footer: {
+                    if gradeSettings.distinctAbschlussOptions.count > 1 || gradeSettings.fachOptions(forAbschluss: gradeSettings.selectedAbschluss).count > 1 {
+                        Text("QIS meldet mehrere Möglichkeiten für deinen Account. Wähle aus, welche Noten angezeigt werden sollen.")
                     }
                 }
 
@@ -107,6 +110,14 @@ struct SettingsView: View {
             .onChange(of: notificationsEnabled) { _, enabled in
                 Task { await updateNotifications(enabled: enabled) }
             }
+            .onChange(of: gradeSettings.selectedAbschluss) { _, newAbschluss in
+                // Fachwahl ist an den Abschluss gebunden: beim Wechsel automatisch übernehmen,
+                // wenn es nur eine Fachrichtung gibt, sonst zur erneuten Auswahl zurücksetzen.
+                let options = gradeSettings.fachOptions(forAbschluss: newAbschluss)
+                if !options.contains(gradeSettings.selectedFach) {
+                    gradeSettings.selectedFach = options.count == 1 ? options[0] : ""
+                }
+            }
             .alert("Benachrichtigungen deaktiviert", isPresented: $showingNotificationDeniedAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
@@ -130,6 +141,38 @@ struct SettingsView: View {
             get: { gradeSettings.targetEcts > 0 ? String(gradeSettings.targetEcts) : "" },
             set: { gradeSettings.targetEcts = Int($0) ?? 0 }
         )
+    }
+
+    /// Abschluss-Typ: Picker mit den echten, bei QIS gefundenen Optionen, sobald es mehr als eine
+    /// gibt -- sonst reiner Hinweistext (Szenario 1/3), niemals ein frei editierbares Textfeld.
+    @ViewBuilder
+    private var degreeTypeRow: some View {
+        let options = gradeSettings.distinctAbschlussOptions
+        if options.count > 1 {
+            Picker("Abschluss-Typ", selection: $gradeSettings.selectedAbschluss) {
+                ForEach(options, id: \.self) { abschluss in
+                    Text(QISLabels.degreeFullName(for: abschluss)).tag(abschluss)
+                }
+            }
+        } else if !gradeSettings.selectedAbschluss.isEmpty {
+            LabeledContent("Abschluss-Typ", value: QISLabels.degreeFullName(for: gradeSettings.selectedAbschluss))
+        }
+    }
+
+    /// Studiengang: Picker mit den Fachrichtungen des gewählten Abschlusses, sobald es mehr als
+    /// eine gibt -- sonst reiner Hinweistext, ebenfalls strikt aus den echten QIS-Daten.
+    @ViewBuilder
+    private var fachRow: some View {
+        let options = gradeSettings.fachOptions(forAbschluss: gradeSettings.selectedAbschluss)
+        if options.count > 1 {
+            Picker("Studiengang", selection: $gradeSettings.selectedFach) {
+                ForEach(options, id: \.self) { fach in
+                    Text(QISLabels.fachName(for: fach)).tag(fach)
+                }
+            }
+        } else if !gradeSettings.selectedFach.isEmpty {
+            LabeledContent("Studiengang", value: QISLabels.fachName(for: gradeSettings.selectedFach))
+        }
     }
 
     /// Schaltet Benachrichtigungen ein/aus: fragt beim Aktivieren die Systemberechtigung an und
@@ -159,11 +202,15 @@ struct SettingsView: View {
         isSaving = true
         Task {
             do {
-                let gradeTable = try await QISClient().fetchGrades(
+                let gradeTables = try await QISClient().fetchGrades(
                     username: newUsername, password: newPassword, allowSessionReuse: false
                 )
                 KeychainStore.save(Credentials(username: newUsername, password: newPassword))
-                GradeCache.save(gradeTable)
+                GradeCache.save(gradeTables)
+                // Neu anmelden kann (z. B. bei einem Accountwechsel) andere Abschluss-/Fach-
+                // Kombinationen zutage fördern -- availableDegreeOptions und die Auswahl müssen
+                // daher wie beim Login neu abgeglichen werden, nicht nur die rohe Tabelle.
+                gradeSettings = GradeSettings.loadApplyingAutoDetection(from: gradeTables)
                 isSaving = false
                 dismiss()
             } catch {

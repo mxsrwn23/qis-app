@@ -59,18 +59,19 @@ actor QISClient {
         self.cookieStorage = configuration.httpCookieStorage
     }
 
-    /// Holt den Notenspiegel. Mit `allowSessionReuse: true` (Normalfall, z. B. Pull-to-refresh)
+    /// Holt den Notenspiegel -- eine Tabelle pro tatsächlich vorhandener (Abschluss, Fach)-
+    /// Kombination (meist genau eine). Mit `allowSessionReuse: true` (Normalfall, z. B. Pull-to-refresh)
     /// wird zuerst versucht, eine gespeicherte QIS-Session wiederzuverwenden, statt den vollen
     /// SAML-Login erneut zu durchlaufen -- nur bei abgelaufener/ungültiger Session (Redirect
     /// zurück zum IdP oder fehlende Daten) folgt ein einmaliger Fallback auf den vollen Login.
     /// Reine Netzwerkfehler lösen dagegen keinen zweiten Versuch aus. Mit `allowSessionReuse:
     /// false` (z. B. beim expliziten Testen neuer Zugangsdaten in den Einstellungen) wird immer
     /// vollständig neu angemeldet.
-    func fetchGrades(username: String, password: String, allowSessionReuse: Bool = true) async throws -> GradeTable {
+    func fetchGrades(username: String, password: String, allowSessionReuse: Bool = true) async throws -> [GradeTable] {
         if allowSessionReuse, let cookies = SessionCookieStore.load(username: username) {
             applyCookies(cookies)
             do {
-                return try await fetchGradeTable()
+                return try await fetchGradeTables()
             } catch let error as QISError where error.indicatesInvalidSession {
                 // Die ungültige Session-Cookie muss vor dem vollen Login entfernt werden, sonst
                 // schickt der erste Request der Login-Seite die abgelaufene JSESSIONID/
@@ -81,7 +82,7 @@ actor QISClient {
         }
         try await login(username: username, password: password)
         saveCurrentSession(username: username)
-        return try await fetchGradeTable()
+        return try await fetchGradeTables()
     }
 
     private func applyCookies(_ cookies: [HTTPCookie]) {
@@ -165,7 +166,13 @@ actor QISClient {
 
     // MARK: - Notenspiegel-Navigation (qis-unlocked.py: TEIL 3)
 
-    private func fetchGradeTable() async throws -> GradeTable {
+    /// Ermittelt alle tatsächlich im Studiengangs-Baum des Nutzers vorhandenen (Abschluss, Fach)-
+    /// Kombinationen und lädt für jede davon ihre eigene Notenliste. Es wird nie geraten oder
+    /// hartkodiert, welcher Abschluss/Studiengang "der richtige" ist -- hat der Nutzer nur eine
+    /// Kombination, liefert diese Funktion genau ein Element; hat er mehrere (z. B. zwei
+    /// Abschlüsse, oder ein Abschluss mit zwei Fachrichtungen), liefert sie alle, damit die
+    /// Auswahl darunter dem Nutzer überlassen werden kann (siehe `GradeSettings`).
+    private func fetchGradeTables() async throws -> [GradeTable] {
         let menuDoc = try await getDocument(Self.menuURL)
         guard !isLoginPage(menuDoc) else {
             throw QISError.sessionExpired
@@ -177,28 +184,43 @@ actor QISClient {
         }
         let treeDoc = try await getDocument(notenspiegelURL)
 
-        guard let expandHref = try findNewestStudiengangHref(in: treeDoc, matching: "struct=auswahlBaum.*expand=0"),
-              let expandURL = URL(string: expandHref, relativeTo: notenspiegelURL)?.absoluteURL else {
+        // Oberste Baumebene: eine Kategorie pro Abschluss-Typ (z. B. "Abschluss Bachelor of
+        // Science", "Abschluss Bachelor of Engineering"). Ein frisch eingeklappter Baum zeigt hier
+        // normalerweise genau einen Kandidaten pro tatsächlich vorhandenem Abschluss -- bei
+        // Studierenden mit mehreren Abschlüssen (Doppelstudium/Zweitstudium) können es aber auch
+        // mehrere sein. Alle werden einzeln expandiert, keiner wird vorab verworfen.
+        let topLevelHrefs = try findAllHrefs(in: treeDoc, matching: "struct=auswahlBaum.*expand=0")
+        guard !topLevelHrefs.isEmpty else {
             throw QISError.navigationFailed("Studiengangs-Baum")
         }
-        let expandedDoc = try await getDocument(expandURL)
 
-        // Der Baum einer frischen Session ist meist eingeklappt, daher findet der vorige Schritt
-        // immer nur einen "expand=0"-Kandidaten (die übergeordnete Kategorie, z. B. "Abschluss
-        // Bachelor of Science"), dessen Ziel wieder eine Baumseite ist. Die eigentliche
-        // Studiengangs-Auswahl (und damit der PO-Versions-Tiebreak) wird erst hier verfügbar,
-        // sobald diese Seite die einzelnen Studiengänge auflistet.
-        guard let listHref = try findNewestStudiengangHref(in: expandedDoc, matching: "next=list\\.vm"),
-              let listURL = URL(string: listHref, relativeTo: expandURL)?.absoluteURL else {
+        var listURLs: [URL] = []
+        for topHref in topLevelHrefs {
+            guard let expandURL = URL(string: topHref, relativeTo: notenspiegelURL)?.absoluteURL else { continue }
+            let expandedDoc = try await getDocument(expandURL)
+
+            // Die eigentliche Studiengangs-Auswahl (und damit der PO-Versions-Tiebreak pro Fach)
+            // wird erst hier verfügbar, sobald diese Seite die einzelnen Studiengänge dieses
+            // Abschlusses auflistet. Innerhalb desselben Fachs gewinnt die neueste PO-Version
+            // (Schwerpunktwechsel innerhalb derselben Prüfungsordnung); unterschiedliche Fächer
+            // bleiben dagegen beide erhalten, statt dass eines dem anderen "zum Opfer fällt".
+            let fachURLs = try findNewestPerFach(in: expandedDoc, matching: "next=list\\.vm", relativeTo: expandURL)
+            listURLs.append(contentsOf: fachURLs)
+        }
+        guard !listURLs.isEmpty else {
             throw QISError.navigationFailed("Notenliste")
         }
-        let gradesDoc = try await getDocument(listURL)
 
-        var gradeTable = try parseGradeTable(from: gradesDoc)
-        let studentInfo = try parseStudentInfo(from: gradesDoc)
-        gradeTable.abschluss = studentInfo.abschluss
-        gradeTable.fach = studentInfo.fach
-        return gradeTable
+        var tables: [GradeTable] = []
+        for listURL in listURLs {
+            let gradesDoc = try await getDocument(listURL)
+            var gradeTable = try parseGradeTable(from: gradesDoc)
+            let studentInfo = try parseStudentInfo(from: gradesDoc)
+            gradeTable.abschluss = studentInfo.abschluss
+            gradeTable.fach = studentInfo.fach
+            tables.append(gradeTable)
+        }
+        return tables
     }
 
     /// Liest "(angestrebter) Abschluss" und "Fach" aus der Tabelle "Stammdaten des Studierenden",
@@ -231,37 +253,59 @@ actor QISClient {
         return nil
     }
 
-    /// Wählt den Studiengangs-Link mit der neuesten "PO-Version JJJJ" im Text aus und bevorzugt
-    /// bei gleichem Jahr den zuletzt aufgeführten Link (z. B. bei einem Schwerpunktwechsel
-    /// innerhalb derselben Prüfungsordnung wie "Informatik" zu "Informatik Schwerpunkt KI", beide
-    /// unter PO 2024). QIS listet ältere Einschreibungen im Baum zuerst auf. Dem ersten
-    /// "expand=0"-Link blind zu folgen lud daher stillschweigend eine veraltete, unvollständige
-    /// Modulliste statt der aktuellen.
-    private func findNewestStudiengangHref(in document: Document, matching pattern: String) throws -> String? {
+    /// Sammelt alle Hrefs, deren URL auf `pattern` passt, in Dokumentreihenfolge (ohne Duplikate).
+    private func findAllHrefs(in document: Document, matching pattern: String) throws -> [String] {
+        let regex = try NSRegularExpression(pattern: pattern)
+        var seen: Set<String> = []
+        var hrefs: [String] = []
+        for link in try document.select("a[href]").array() {
+            let href = try link.attr("href")
+            let range = NSRange(href.startIndex..., in: href)
+            guard regex.firstMatch(in: href, range: range) != nil, seen.insert(href).inserted else { continue }
+            hrefs.append(href)
+        }
+        return hrefs
+    }
+
+    /// Gruppiert die Studiengangs-Links nach Fach (Linktext ohne den "(PO-Version JJJJ)"-Zusatz)
+    /// und behält pro Fach nur den Link mit der neuesten PO-Version (bevorzugt bei Gleichstand den
+    /// zuletzt aufgeführten) -- z. B. bei einem Schwerpunktwechsel innerhalb derselben
+    /// Prüfungsordnung wie "Informatik" zu "Informatik Schwerpunkt KI", beide unter PO 2024. QIS
+    /// listet ältere Einschreibungen im Baum zuerst auf, daher würde ein blindes "ersten Treffer
+    /// nehmen" stillschweigend eine veraltete, unvollständige Modulliste laden statt der aktuellen.
+    /// Unterschiedliche Fächer (unterschiedlicher Linktext nach Entfernen der PO-Version) werden
+    /// dagegen nie gegeneinander ausgespielt -- beide bleiben als eigene Kombination erhalten.
+    private func findNewestPerFach(in document: Document, matching pattern: String, relativeTo base: URL) throws -> [URL] {
         let regex = try NSRegularExpression(pattern: pattern)
         let poRegex = try NSRegularExpression(pattern: "PO-Version\\s*(\\d{4})")
 
-        var bestHref: String?
-        var bestYear = -1
+        var order: [String] = []
+        var bestByFach: [String: (year: Int, href: String)] = [:]
         for link in try document.select("a[href]").array() {
             let href = try link.attr("href")
             let hrefRange = NSRange(href.startIndex..., in: href)
             guard regex.firstMatch(in: href, range: hrefRange) != nil else { continue }
 
-            if bestHref == nil {
-                bestHref = href
-            }
-
             let text = try link.text()
+            let fachKey = QISLabels.fachName(for: text)
             let textRange = NSRange(text.startIndex..., in: text)
-            if let match = poRegex.firstMatch(in: text, range: textRange),
-               let yearRange = Range(match.range(at: 1), in: text),
-               let year = Int(text[yearRange]), year >= bestYear {
-                bestYear = year
-                bestHref = href
+            let year = poRegex.firstMatch(in: text, range: textRange).flatMap { match -> Int? in
+                guard let yearRange = Range(match.range(at: 1), in: text) else { return nil }
+                return Int(text[yearRange])
+            } ?? 0
+
+            if let existing = bestByFach[fachKey] {
+                if year >= existing.year {
+                    bestByFach[fachKey] = (year, href)
+                }
+            } else {
+                bestByFach[fachKey] = (year, href)
+                order.append(fachKey)
             }
         }
-        return bestHref
+        return order.compactMap { fachKey in
+            bestByFach[fachKey].flatMap { URL(string: $0.href, relativeTo: base)?.absoluteURL }
+        }
     }
 
     /// Führt alle passenden `<table>`-Elemente auf der Seite zusammen, nicht nur die erste.

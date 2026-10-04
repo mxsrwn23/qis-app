@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct GradesView: View {
-    let gradeTable: GradeTable
+    let gradeTables: [GradeTable]
     let newModuleKeys: Set<String>
     let onRefresh: () async -> Void
     let onLogout: () -> Void
@@ -16,12 +16,19 @@ struct GradesView: View {
     @AppStorage("qis.filter") private var filter: GradesFilter = .all
     @AppStorage("qis.sort") private var sort: GradesSort = .none
 
-    init(gradeTable: GradeTable, newModuleKeys: Set<String>, onRefresh: @escaping () async -> Void, onLogout: @escaping () -> Void) {
-        self.gradeTable = gradeTable
+    init(gradeTables: [GradeTable], newModuleKeys: Set<String>, onRefresh: @escaping () async -> Void, onLogout: @escaping () -> Void) {
+        self.gradeTables = gradeTables
         self.newModuleKeys = newModuleKeys
         self.onRefresh = onRefresh
         self.onLogout = onLogout
-        _gradeSettings = State(initialValue: GradeSettings.loadApplyingAutoDetection(from: gradeTable))
+        _gradeSettings = State(initialValue: GradeSettings.loadApplyingAutoDetection(from: gradeTables))
+    }
+
+    /// Die Tabelle der bestätigten (oder einzig möglichen) Abschluss-/Fach-Wahl. RootView stellt
+    /// sicher, dass diese View erst erreicht wird, wenn `gradeSettings.needsDegreeSetup` `false`
+    /// ist; der Fallback auf die erste Tabelle greift daher nur defensiv.
+    private var gradeTable: GradeTable {
+        gradeSettings.activeTable(in: gradeTables) ?? gradeTables[0]
     }
 
     private var allCards: [ModuleCardData] {

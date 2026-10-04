@@ -1,0 +1,51 @@
+name: QIS
+options:
+  bundleIdPrefix: dev.maxsauerwein
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+packages:
+  SwiftSoup:
+    url: https://github.com/scinfu/SwiftSoup.git
+    from: "2.6.0"
+targets:
+  QIS:
+    type: application
+    platform: [iOS, macOS]
+    sources:
+      - path: QIS
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.maxsauerwein.qis
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_KEY_CFBundleDisplayName: QIS+ Noten
+        GENERATE_INFOPLIST_FILE: true
+        # Teil-Info.plist mit UIBackgroundModes + BGTaskSchedulerPermittedIdentifiers; wird von
+        # Xcode mit der generierten Info.plist zusammengeführt (für den Hintergrund-Notenabruf).
+        INFOPLIST_FILE: QIS/Info.plist
+        INFOPLIST_KEY_UILaunchScreen_Generation: true
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        ENABLE_HARDENED_RUNTIME: YES
+        DEAD_CODE_STRIPPING: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+    dependencies:
+      - package: SwiftSoup
+schemes:
+  QIS-iOS:
+    build:
+      targets:
+        QIS_iOS: all
+    run:
+      config: Debug
+  QIS-macOS:
+    build:
+      targets:
+        QIS_macOS: all
+    run:
+      config: Debug
