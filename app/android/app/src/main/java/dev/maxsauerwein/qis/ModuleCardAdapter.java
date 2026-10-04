@@ -12,45 +12,156 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.materialswitch.MaterialSwitch;
+
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import dev.maxsauerwein.qis.model.AttemptRow;
 import dev.maxsauerwein.qis.model.ModuleCardData;
 import dev.maxsauerwein.qis.util.GradeStyling;
 
-public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdapter.ViewHolder> {
+/** Rendert die Notenliste als flache Zeilenfolge mit mehreren Viewtypen: Abschnitts-Header
+ *  (Kernmodule/Pflichtmodule/Wahlpflichtmodule oder Semester-Trennzeile), Modul-Karten und die
+ *  klappbare "Archiviert"-Zeile. Port der SwiftUI-List-mit-Sections aus GradesView.swift auf ein
+ *  Mehrfach-Viewtyp-RecyclerView. Die Zeilenliste wird von MainActivity gebaut und per
+ *  {@link #submitRows} hereingereicht; die Adapter-Instanz bleibt über Filter-/Sortier-/Archiv-
+ *  Änderungen hinweg bestehen, damit der manuelle Auf-/Zu-Klappzustand einer Karte nicht bei jeder
+ *  Neuberechnung verloren geht. */
+public final class ModuleCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
-    private final List<ModuleCardData> cards;
-    private final Set<String> visibleFields;
-    private final java.util.Map<String, String> customColors;
-    private final Set<Integer> expandedPositions = new HashSet<>();
+    public enum RowType { SECTION_HEADER, SEMESTER_DIVIDER, MODULE_CARD, ARCHIVE_TOGGLE }
 
-    public ModuleCardAdapter(List<ModuleCardData> cards, Set<String> visibleFields,
-                              java.util.Map<String, String> customColors) {
-        this.cards = cards;
+    public static final class Row {
+        public final RowType type;
+        public final String title;
+        public final ModuleCardData card;
+        public final boolean isArchivedCard;
+        public final int archiveCount;
+        public final boolean archiveExpanded;
+
+        private Row(RowType type, String title, ModuleCardData card, boolean isArchivedCard,
+                    int archiveCount, boolean archiveExpanded) {
+            this.type = type;
+            this.title = title;
+            this.card = card;
+            this.isArchivedCard = isArchivedCard;
+            this.archiveCount = archiveCount;
+            this.archiveExpanded = archiveExpanded;
+        }
+
+        public static Row sectionHeader(String title) {
+            return new Row(RowType.SECTION_HEADER, title, null, false, 0, false);
+        }
+
+        public static Row semesterDivider(String title) {
+            return new Row(RowType.SEMESTER_DIVIDER, title, null, false, 0, false);
+        }
+
+        public static Row moduleCard(ModuleCardData card, boolean isArchivedCard) {
+            return new Row(RowType.MODULE_CARD, null, card, isArchivedCard, 0, false);
+        }
+
+        public static Row archiveToggle(int count, boolean expanded) {
+            return new Row(RowType.ARCHIVE_TOGGLE, null, null, false, count, expanded);
+        }
+    }
+
+    public interface Listener {
+        void onToggleAverageInclusion(ModuleCardData card, boolean includedInAverage);
+        void onArchive(ModuleCardData card);
+        void onRestore(ModuleCardData card);
+        void onToggleArchiveSection();
+    }
+
+    private final Listener listener;
+    private final Set<String> expandedCardIds = new HashSet<>();
+    private final Set<String> seenCardIds = new HashSet<>();
+
+    private List<Row> rows = new ArrayList<>();
+    private Set<String> visibleFields = new HashSet<>();
+    private Map<String, String> customColors = new java.util.HashMap<>();
+    private Set<String> excludedFromAverageModuleKeys = new HashSet<>();
+
+    public ModuleCardAdapter(Listener listener) {
+        this.listener = listener;
+    }
+
+    public void submitRows(List<Row> newRows, Set<String> visibleFields, Map<String, String> customColors,
+                            Set<String> excludedFromAverageModuleKeys) {
+        this.rows = newRows;
         this.visibleFields = visibleFields;
         this.customColors = customColors;
-        for (int i = 0; i < cards.size(); i++) {
-            if (cards.get(i).isNew) {
-                expandedPositions.add(i);
+        this.excludedFromAverageModuleKeys = excludedFromAverageModuleKeys;
+        for (Row row : newRows) {
+            if (row.type == RowType.MODULE_CARD) {
+                String id = row.card.id();
+                if (seenCardIds.add(id) && row.card.isNew) {
+                    expandedCardIds.add(id);
+                }
             }
+        }
+        notifyDataSetChanged();
+    }
+
+    public Row rowAt(int position) {
+        return rows.get(position);
+    }
+
+    @Override
+    public int getItemViewType(int position) {
+        switch (rows.get(position).type) {
+            case SECTION_HEADER: return 0;
+            case SEMESTER_DIVIDER: return 1;
+            case ARCHIVE_TOGGLE: return 3;
+            case MODULE_CARD:
+            default: return 2;
         }
     }
 
     @NonNull
     @Override
-    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext())
-                .inflate(R.layout.item_module_card, parent, false);
-        return new ViewHolder(view);
+    public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        LayoutInflater inflater = LayoutInflater.from(parent.getContext());
+        switch (viewType) {
+            case 0:
+                return new SectionHeaderHolder(inflater.inflate(R.layout.item_list_section_header, parent, false));
+            case 1:
+                return new SemesterDividerHolder(inflater.inflate(R.layout.item_semester_divider, parent, false));
+            case 3:
+                return new ArchiveToggleHolder(inflater.inflate(R.layout.item_archive_toggle, parent, false));
+            case 2:
+            default:
+                return new CardHolder(inflater.inflate(R.layout.item_module_card, parent, false));
+        }
     }
 
     @Override
-    public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        ModuleCardData card = cards.get(position);
-        boolean isExpanded = expandedPositions.contains(position);
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+        Row row = rows.get(position);
+        if (holder instanceof SectionHeaderHolder) {
+            ((SectionHeaderHolder) holder).title.setText(row.title);
+        } else if (holder instanceof SemesterDividerHolder) {
+            ((SemesterDividerHolder) holder).title.setText(row.title);
+        } else if (holder instanceof ArchiveToggleHolder) {
+            bindArchiveToggle((ArchiveToggleHolder) holder, row);
+        } else if (holder instanceof CardHolder) {
+            bindCard((CardHolder) holder, row);
+        }
+    }
+
+    private void bindArchiveToggle(ArchiveToggleHolder holder, Row row) {
+        holder.count.setText(String.valueOf(row.archiveCount));
+        holder.expandIcon.setRotation(row.archiveExpanded ? 180f : 0f);
+        holder.itemView.setOnClickListener(v -> listener.onToggleArchiveSection());
+    }
+
+    private void bindCard(CardHolder holder, Row row) {
+        ModuleCardData card = row.card;
+        boolean isExpanded = expandedCardIds.contains(card.id());
 
         holder.moduleName.setText(card.moduleName);
         holder.moduleGrade.setText(card.grade.isEmpty() ? "–" : card.grade);
@@ -67,8 +178,7 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
             holder.statusChip.setVisibility(View.VISIBLE);
             holder.statusChip.setText(card.statusLabel());
             holder.statusChip.setTextColor(GradeStyling.accent(category, customColors));
-            holder.statusChip.setBackground(
-                    pillDrawable(GradeStyling.backgroundTint(category, customColors)));
+            holder.statusChip.setBackground(pillDrawable(GradeStyling.backgroundTint(category, customColors)));
         } else {
             holder.statusChip.setVisibility(View.GONE);
         }
@@ -85,20 +195,26 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
         holder.expandIcon.setRotation(isExpanded ? 180f : 0f);
         holder.attemptsDivider.setVisibility(isExpanded && !card.attempts.isEmpty() ? View.VISIBLE : View.GONE);
         holder.attemptsContainer.setVisibility(isExpanded && !card.attempts.isEmpty() ? View.VISIBLE : View.GONE);
+        holder.averageDivider.setVisibility(isExpanded ? View.VISIBLE : View.GONE);
+        holder.averageSwitch.setVisibility(isExpanded ? View.VISIBLE : View.GONE);
         androidx.core.view.ViewCompat.setStateDescription(holder.cardHeader,
                 isExpanded ? "Aufgeklappt" : "Zugeklappt");
 
         if (isExpanded) {
             renderAttempts(holder, card.attempts);
+            holder.averageSwitch.setOnCheckedChangeListener(null);
+            holder.averageSwitch.setChecked(!excludedFromAverageModuleKeys.contains(card.id()));
+            holder.averageSwitch.setOnCheckedChangeListener((button, checked) ->
+                    listener.onToggleAverageInclusion(card, checked));
         }
 
         holder.cardHeader.setOnClickListener(v -> {
-            if (expandedPositions.contains(position)) {
-                expandedPositions.remove(position);
+            if (expandedCardIds.contains(card.id())) {
+                expandedCardIds.remove(card.id());
             } else {
-                expandedPositions.add(position);
+                expandedCardIds.add(card.id());
             }
-            notifyItemChanged(position);
+            notifyItemChanged(holder.getBindingAdapterPosition());
         });
     }
 
@@ -116,7 +232,7 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
         return drawable;
     }
 
-    private void renderAttempts(ViewHolder holder, List<AttemptRow> attempts) {
+    private void renderAttempts(CardHolder holder, List<AttemptRow> attempts) {
         holder.attemptsContainer.removeAllViews();
         LayoutInflater inflater = LayoutInflater.from(holder.attemptsContainer.getContext());
         for (AttemptRow attempt : attempts) {
@@ -143,10 +259,39 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
 
     @Override
     public int getItemCount() {
-        return cards.size();
+        return rows.size();
     }
 
-    static final class ViewHolder extends RecyclerView.ViewHolder {
+    static final class SectionHeaderHolder extends RecyclerView.ViewHolder {
+        final TextView title;
+
+        SectionHeaderHolder(@NonNull View itemView) {
+            super(itemView);
+            title = itemView.findViewById(R.id.sectionHeaderTitle);
+        }
+    }
+
+    static final class SemesterDividerHolder extends RecyclerView.ViewHolder {
+        final TextView title;
+
+        SemesterDividerHolder(@NonNull View itemView) {
+            super(itemView);
+            title = itemView.findViewById(R.id.semesterDividerTitle);
+        }
+    }
+
+    static final class ArchiveToggleHolder extends RecyclerView.ViewHolder {
+        final TextView count;
+        final ImageView expandIcon;
+
+        ArchiveToggleHolder(@NonNull View itemView) {
+            super(itemView);
+            count = itemView.findViewById(R.id.archiveToggleCount);
+            expandIcon = itemView.findViewById(R.id.archiveToggleExpandIcon);
+        }
+    }
+
+    static final class CardHolder extends RecyclerView.ViewHolder {
         final LinearLayout cardHeader;
         final TextView moduleName;
         final TextView moduleGrade;
@@ -156,8 +301,10 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
         final ImageView expandIcon;
         final View attemptsDivider;
         final LinearLayout attemptsContainer;
+        final View averageDivider;
+        final MaterialSwitch averageSwitch;
 
-        ViewHolder(@NonNull View itemView) {
+        CardHolder(@NonNull View itemView) {
             super(itemView);
             cardHeader = itemView.findViewById(R.id.cardHeader);
             moduleName = itemView.findViewById(R.id.moduleName);
@@ -168,6 +315,8 @@ public final class ModuleCardAdapter extends RecyclerView.Adapter<ModuleCardAdap
             expandIcon = itemView.findViewById(R.id.expandIcon);
             attemptsDivider = itemView.findViewById(R.id.attemptsDivider);
             attemptsContainer = itemView.findViewById(R.id.attemptsContainer);
+            averageDivider = itemView.findViewById(R.id.averageDivider);
+            averageSwitch = itemView.findViewById(R.id.averageSwitch);
         }
     }
 }

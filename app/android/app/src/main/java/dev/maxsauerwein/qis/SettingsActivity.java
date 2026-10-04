@@ -4,7 +4,11 @@ import android.Manifest;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.TextView;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -14,7 +18,9 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.android.material.textfield.MaterialAutoCompleteTextView;
 import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 
 import dev.maxsauerwein.qis.model.Credentials;
 import dev.maxsauerwein.qis.model.GradeTable;
@@ -25,6 +31,7 @@ import dev.maxsauerwein.qis.storage.GradeCacheStore;
 import dev.maxsauerwein.qis.storage.GradeSettingsStore;
 import dev.maxsauerwein.qis.storage.SeenGradesStore;
 import dev.maxsauerwein.qis.storage.SessionCookieStore;
+import dev.maxsauerwein.qis.util.QISLabels;
 import dev.maxsauerwein.qis.work.GradeRefreshScheduler;
 import dev.maxsauerwein.qis.work.GradeRefreshWorker;
 import androidx.work.OneTimeWorkRequest;
@@ -40,10 +47,17 @@ public final class SettingsActivity extends AppCompatActivity {
 
     private TextInputEditText usernameInput;
     private TextInputEditText passwordInput;
-    private TextInputEditText studiengangInput;
+    private TextInputLayout abschlussLayout;
+    private MaterialAutoCompleteTextView abschlussInput;
+    private TextInputLayout fachLayout;
+    private MaterialAutoCompleteTextView fachInput;
+    private TextView degreeFooter;
     private TextInputEditText semesterInput;
     private TextInputEditText targetEctsInput;
     private TextView errorText;
+    private GradeSettingsStore.Settings settings;
+    private List<String> abschlussRawValues = new ArrayList<>();
+    private List<String> fachRawValues = new ArrayList<>();
     private MaterialButton saveButton;
     private View progress;
     private MaterialSwitch notifyNewGradesSwitch;
@@ -75,7 +89,11 @@ public final class SettingsActivity extends AppCompatActivity {
 
         usernameInput = findViewById(R.id.settingsUsernameInput);
         passwordInput = findViewById(R.id.settingsPasswordInput);
-        studiengangInput = findViewById(R.id.settingsStudiengangInput);
+        abschlussLayout = findViewById(R.id.settingsAbschlussLayout);
+        abschlussInput = findViewById(R.id.settingsAbschlussInput);
+        fachLayout = findViewById(R.id.settingsFachLayout);
+        fachInput = findViewById(R.id.settingsFachInput);
+        degreeFooter = findViewById(R.id.settingsDegreeFooter);
         semesterInput = findViewById(R.id.settingsSemesterInput);
         targetEctsInput = findViewById(R.id.settingsTargetEctsInput);
         errorText = findViewById(R.id.settingsError);
@@ -88,8 +106,8 @@ public final class SettingsActivity extends AppCompatActivity {
             usernameInput.setText(existing.username);
         }
 
-        GradeSettingsStore.Settings settings = gradeSettingsStore.load();
-        studiengangInput.setText(settings.studiengang);
+        settings = gradeSettingsStore.load();
+        renderDegreeFields();
         if (settings.semester > 0) {
             semesterInput.setText(String.valueOf(settings.semester));
         }
@@ -176,11 +194,67 @@ public final class SettingsActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        GradeSettingsStore.Settings settings = gradeSettingsStore.load();
-        settings.studiengang = textOf(studiengangInput);
-        settings.semester = parseIntOrDefault(textOf(semesterInput), 0);
-        settings.targetEcts = parseIntOrDefault(textOf(targetEctsInput), 0);
+        GradeSettingsStore.Settings current = gradeSettingsStore.load();
+        current.semester = parseIntOrDefault(textOf(semesterInput), 0);
+        current.targetEcts = parseIntOrDefault(textOf(targetEctsInput), 0);
+        gradeSettingsStore.save(current);
+    }
+
+    /** Baut die Abschluss-/Studiengang-Felder aus settings.availableDegreeOptions neu auf: je ein
+     *  "Exposed Dropdown Menu" sobald mehr als eine Option existiert, sonst ein deaktiviertes Feld
+     *  mit dem bereits feststehenden Wert als reiner Anzeige-Text (Port von degreeTypeRow/fachRow
+     *  in SettingsView.swift). */
+    private void renderDegreeFields() {
+        List<String> abschlussOptions = settings.distinctAbschlussOptions();
+        abschlussRawValues = abschlussOptions;
+        List<String> abschlussLabels = new ArrayList<>();
+        for (String abschluss : abschlussOptions) {
+            abschlussLabels.add(QISLabels.degreeFullName(abschluss));
+        }
+        boolean abschlussEditable = abschlussOptions.size() > 1;
+        abschlussInput.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, abschlussLabels));
+        abschlussInput.setText(settings.selectedAbschluss.isEmpty() ? "" : QISLabels.degreeFullName(settings.selectedAbschluss), false);
+        abschlussInput.setEnabled(abschlussEditable);
+        abschlussLayout.setEndIconVisible(abschlussEditable);
+        abschlussLayout.setVisibility(settings.selectedAbschluss.isEmpty() && !abschlussEditable ? View.GONE : View.VISIBLE);
+        abschlussInput.setOnItemClickListener((parent, view, position, id) -> selectAbschluss(abschlussRawValues.get(position)));
+
+        renderFachField();
+
+        boolean needsChoice = abschlussOptions.size() > 1
+                || settings.fachOptions(settings.selectedAbschluss).size() > 1;
+        degreeFooter.setVisibility(needsChoice ? View.VISIBLE : View.GONE);
+    }
+
+    private void renderFachField() {
+        List<String> fachOptions = settings.fachOptions(settings.selectedAbschluss);
+        fachRawValues = fachOptions;
+        List<String> fachLabels = new ArrayList<>();
+        for (String fach : fachOptions) {
+            fachLabels.add(QISLabels.fachName(fach));
+        }
+        boolean fachEditable = fachOptions.size() > 1;
+        fachInput.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, fachLabels));
+        fachInput.setText(settings.selectedFach.isEmpty() ? "" : QISLabels.fachName(settings.selectedFach), false);
+        fachInput.setEnabled(fachEditable);
+        fachLayout.setEndIconVisible(fachEditable);
+        fachLayout.setVisibility(settings.selectedAbschluss.isEmpty()
+                || (settings.selectedFach.isEmpty() && !fachEditable) ? View.GONE : View.VISIBLE);
+        fachInput.setOnItemClickListener((parent, view, position, id) -> selectFach(fachRawValues.get(position)));
+    }
+
+    private void selectAbschluss(String abschluss) {
+        settings.selectedAbschluss = abschluss;
+        List<String> fachOptions = settings.fachOptions(abschluss);
+        settings.selectedFach = fachOptions.size() == 1 ? fachOptions.get(0) : "";
         gradeSettingsStore.save(settings);
+        renderDegreeFields();
+    }
+
+    private void selectFach(String fach) {
+        settings.selectedFach = fach;
+        gradeSettingsStore.save(settings);
+        renderFachField();
     }
 
     private int parseIntOrDefault(String text, int fallback) {
@@ -201,10 +275,14 @@ public final class SettingsActivity extends AppCompatActivity {
         setLoading(true);
         qisClient.fetchGrades(username, password, false, new QISClient.Callback() {
             @Override
-            public void onSuccess(GradeTable gradeTable) {
+            public void onSuccess(List<GradeTable> gradeTables) {
                 setLoading(false);
                 credentialStore.save(new Credentials(username, password));
-                gradeCacheStore.saveTable(gradeTable);
+                gradeCacheStore.saveTables(gradeTables);
+                // Neu anmelden kann (z. B. bei einem Accountwechsel) andere Abschluss-/Fach-
+                // Kombinationen zutage fördern -- availableDegreeOptions und die Auswahl müssen
+                // daher wie beim Login neu abgeglichen werden, nicht nur die rohen Felder.
+                GradeSettingsStore.loadApplyingAutoDetection(getApplicationContext(), gradeTables);
                 setResult(RESULT_OK);
                 finish();
             }

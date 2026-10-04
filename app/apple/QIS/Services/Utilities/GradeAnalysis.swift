@@ -1,25 +1,45 @@
 import Foundation
 
-/// Modul-Gruppierung und gewichtete Durchschnittsberechnung, portiert aus der qis-extension
-/// (groupRowsByModule / calcAvgGrade in entrypoints/qis-content.content/index.js).
+/// Modul-Gruppierung und gewichtete Durchschnittsberechnung, portiert aus der
+/// qis-extension (groupRowsByModule / calcAvgGrade in entrypoints/qis-content.content/index.js).
 enum GradeAnalysis {
     struct ModuleGroup {
         let headerRowIndex: Int
+        let moduleKey: String
         var detailRowIndices: [Int] = []
     }
 
     /// Gruppiert Zeilen unter die nächstgelegene vorangehende "Modul: …"-Kopfzeile; eine
     /// Abschnitts-Trennzeile (Kernmodule/Pflichtmodule/Wahlpflichtmodule) beendet die aktuelle
-    /// Gruppe.
+    /// Gruppe. Der Schlüssel entspricht `ModuleCardData.id`, damit Einstellungen pro Karte auch
+    /// für die Schnittberechnung gelten.
     static func moduleGroups(rows: [[String]], prüfungstextIndex: Int?) -> [ModuleGroup] {
         var groups: [ModuleGroup] = []
         var currentGroupIndex: Int?
+        var currentSectionTitle: String?
+
+        func value(_ index: Int?, in row: [String]) -> String {
+            guard let index, index < row.count else { return "" }
+            return row[index]
+        }
+
+        func moduleName(in row: [String]) -> String {
+            value(prüfungstextIndex, in: row)
+                .replacingOccurrences(of: "Modul:", with: "")
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+
         for (index, row) in rows.enumerated() {
-            if GradeStyling.isModuleRow(row, prüfungstextIndex: prüfungstextIndex) {
-                groups.append(ModuleGroup(headerRowIndex: index))
-                currentGroupIndex = groups.count - 1
-            } else if GradeStyling.isSectionRow(row, prüfungstextIndex: prüfungstextIndex) {
+            if GradeStyling.isSectionRow(row, prüfungstextIndex: prüfungstextIndex) {
+                let title = value(prüfungstextIndex, in: row).trimmingCharacters(in: .whitespacesAndNewlines)
+                currentSectionTitle = title.isEmpty ? nil : title
                 currentGroupIndex = nil
+            } else if GradeStyling.isModuleRow(row, prüfungstextIndex: prüfungstextIndex) {
+                let key = "\(currentSectionTitle ?? "")|\(moduleName(in: row))"
+                groups.append(ModuleGroup(headerRowIndex: index, moduleKey: key))
+                currentGroupIndex = groups.count - 1
             } else if let groupIndex = currentGroupIndex {
                 groups[groupIndex].detailRowIndices.append(index)
             }
@@ -52,10 +72,14 @@ enum GradeAnalysis {
         }
     }
 
-    /// ECTS-gewichteter Durchschnitt über alle Module: "all" summiert jeden gültigen Versuch,
-    /// "last" wählt pro Modul den Versuch mit der höchsten Versuchsnummer, "best" wählt die beste
-    /// (niedrigste) Note.
-    static func average(table: GradeTable, mode: GradeSettings.AverageMode) -> Double? {
+    /// ECTS-gewichteter Durchschnitt über die einbezogenen Module: "all" summiert jeden gültigen
+    /// Versuch, "last" wählt pro Modul den Versuch mit der höchsten Versuchsnummer, "best" die
+    /// beste (niedrigste) Note.
+    static func average(
+        table: GradeTable,
+        mode: GradeSettings.AverageMode,
+        excludedModuleKeys: Set<String> = []
+    ) -> Double? {
         guard let noteIndex = GradeStyling.columnIndex(in: table.header, containing: "note"),
               let ectsIndex = GradeStyling.columnIndex(in: table.header, containing: "ects") else {
             return nil
@@ -68,6 +92,8 @@ enum GradeAnalysis {
         var totalEcts = 0.0
 
         for group in groups {
+            guard !excludedModuleKeys.contains(group.moduleKey) else { continue }
+
             let groupAttempts = attempts(in: group, rows: table.rows, noteIndex: noteIndex, ectsIndex: ectsIndex, versuchIndex: versuchIndex)
             guard !groupAttempts.isEmpty else { continue }
 

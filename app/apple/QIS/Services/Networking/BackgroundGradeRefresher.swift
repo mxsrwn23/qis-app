@@ -18,11 +18,7 @@ enum BackgroundGradeRefresher {
     /// Im Debug-Build kurz gehalten, damit sich der echte Hintergrund-Lauf beim Testen nicht durch
     /// jedes erneute Backgrounding um weitere 4h verschiebt (jedes `schedule()` ersetzt die zuvor
     /// eingeplante Anfrage).
-    #if DEBUG
-    private static let earliestInterval: TimeInterval = 5 * 60
-    #else
     private static let earliestInterval: TimeInterval = 4 * 60 * 60
-    #endif
 
     /// Registriert den Task-Handler. Muss vor Abschluss des App-Starts aufgerufen werden.
     static func register() {
@@ -83,11 +79,21 @@ enum BackgroundGradeRefresher {
             return
         }
         do {
-            let table = try await QISClient().fetchGrades(
+            let tables = try await QISClient().fetchGrades(
                 username: credentials.username, password: credentials.password
             )
-            GradeCache.save(table)
-            let newModules = SeenGradesStore.newlyGradedForNotification(in: table)
+            GradeCache.save(tables)
+            // Solange der Nutzer bei mehreren Abschluss-/Fach-Kombinationen noch keine Wahl
+            // getroffen hat (siehe GradeSettings.needsDegreeSetup), lässt sich nicht eindeutig
+            // bestimmen, welche Tabelle für die Benachrichtigung relevant ist -- in diesem Fall
+            // wird nur gecacht, aber nicht benachrichtigt (die Auswahl erfolgt beim nächsten
+            // App-Start im Ersteinrichtungs-Dialog).
+            let settings = GradeSettings.loadApplyingAutoDetection(from: tables)
+            guard let active = settings.activeTable(in: tables) else {
+                logger.log("Abruf erfolgreich, aber Abschluss-/Studiengangswahl steht noch aus")
+                return
+            }
+            let newModules = SeenGradesStore.newlyGradedForNotification(in: active)
             logger.log("Abruf erfolgreich, \(newModules.count) neu benotete Module")
             if !newModules.isEmpty {
                 await NotificationService.notifyNewGrades(newModules.sorted())

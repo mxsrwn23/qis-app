@@ -5,7 +5,10 @@ struct RootView: View {
         case checkingCredentials
         case loggedOut
         case loading
-        case loaded(GradeTable)
+        /// Login/Cache erfolgreich, aber QIS meldet mehrere Abschluss-Typen und/oder
+        /// Studiengänge -- der Nutzer muss erst wählen, bevor eine Notenliste angezeigt wird.
+        case needsDegreeSelection([GradeTable])
+        case loaded([GradeTable])
         case failed(String)
     }
 
@@ -28,17 +31,23 @@ struct RootView: View {
                     // Lebensdauer dieser View gebunden und übersteht den Wechsel.
                     .task { Task { await bootstrap() } }
             case .loggedOut:
-                LoginView { credentials, gradeTable in
+                LoginView { credentials, gradeTables in
                     KeychainStore.save(credentials)
-                    GradeCache.save(gradeTable)
-                    present(gradeTable)
+                    GradeCache.save(gradeTables)
+                    present(gradeTables)
                 }
             case .loading:
                 ProgressView("Lade Notenspiegel…")
-            case .loaded(let gradeTable):
+            case .needsDegreeSelection(let gradeTables):
+                NavigationStack {
+                    DegreeSetupView(tables: gradeTables) {
+                        present(gradeTables)
+                    }
+                }
+            case .loaded(let gradeTables):
                 NavigationStack {
                     GradesView(
-                        gradeTable: gradeTable,
+                        gradeTables: gradeTables,
                         newModuleKeys: newModuleKeys,
                         onRefresh: { Task { await refresh() } },
                         onLogout: logout
@@ -114,19 +123,30 @@ struct RootView: View {
         await performFetch(credentials: credentials, force: false)
     }
 
-    /// Zentrale Stelle für jeden Wechsel zu einer (neu geladenen oder gecachten) Notentabelle:
-    /// ermittelt einmalig die frisch benoteten Module gegenüber dem zuletzt gesehenen Stand, bevor
-    /// die Tabelle angezeigt wird. So läuft der Vergleich nur bei echten Datenwechseln, nicht bei
-    /// jedem Re-Render von GradesView (Filter, Sortierung, Einstellungen).
-    private func present(_ table: GradeTable) {
-        if case .loaded(let current) = phase, current == table {
-            // Bereits angezeigte Tabelle (z. B. Cache-Anzeige gefolgt vom Fresh-Check in
+    /// Zentrale Stelle für jeden Wechsel zu (neu geladenen oder gecachten) Notentabellen: wendet
+    /// zunächst die Auto-Erkennung auf `GradeSettings` an (siehe
+    /// `GradeSettings.loadApplyingAutoDetection`) und zeigt bei mehreren noch unentschiedenen
+    /// Abschluss-/Fach-Kombinationen erst den Ersteinrichtungs-Dialog, statt direkt eine
+    /// (möglicherweise falsche) Tabelle anzuzeigen. Ist die Auswahl eindeutig, ermittelt sie
+    /// einmalig die frisch benoteten Module der aktiven Tabelle gegenüber dem zuletzt gesehenen
+    /// Stand. So läuft der Vergleich nur bei echten Datenwechseln, nicht bei jedem Re-Render von
+    /// GradesView (Filter, Sortierung, Einstellungen).
+    private func present(_ tables: [GradeTable]) {
+        let settings = GradeSettings.loadApplyingAutoDetection(from: tables)
+        guard !settings.needsDegreeSetup else {
+            phase = .needsDegreeSelection(tables)
+            return
+        }
+        if case .loaded(let current) = phase, current == tables {
+            // Bereits angezeigte Tabellen (z. B. Cache-Anzeige gefolgt vom Fresh-Check in
             // performFetch): nicht erneut gegen die inzwischen aktualisierte Baseline abgleichen,
             // sonst würden gerade erkannte neue Noten sofort wieder verworfen.
             return
         }
-        newModuleKeys = SeenGradesStore.newlyGradedModuleKeys(in: table)
-        phase = .loaded(table)
+        if let active = settings.activeTable(in: tables) {
+            newModuleKeys = SeenGradesStore.newlyGradedModuleKeys(in: active)
+        }
+        phase = .loaded(tables)
     }
 
     /// Bewusster Force-Refresh, ausgelöst durch Pull-to-refresh oder den Retry-Button.
@@ -157,10 +177,10 @@ struct RootView: View {
         }
         GradeCache.recordAttempt()
         do {
-            let gradeTable = try await QISClient().fetchGrades(username: credentials.username, password: credentials.password)
-            GradeCache.save(gradeTable)
+            let gradeTables = try await QISClient().fetchGrades(username: credentials.username, password: credentials.password)
+            GradeCache.save(gradeTables)
             refreshErrorMessage = nil
-            present(gradeTable)
+            present(gradeTables)
         } catch {
             if let cached = GradeCache.load() {
                 present(cached)
@@ -174,6 +194,8 @@ struct RootView: View {
     private func logout() {
         KeychainStore.clear()
         GradeCache.clear()
+        ModuleArchiveStore.clear()
+        AverageInclusionStore.clear()
         SessionCookieStore.clear()
         SeenGradesStore.clear()
         phase = .loggedOut

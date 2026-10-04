@@ -12,38 +12,10 @@ struct GradeTable: Equatable, Codable {
 }
 
 extension GradeTable {
-    private static let degreeAbbreviations: [String: String] = [
-        "Bachelor of Science": "B.Sc.",
-        "Master of Science": "M.Sc.",
-        "Bachelor of Arts": "B.A.",
-        "Master of Arts": "M.A.",
-        "Bachelor of Engineering": "B.Eng.",
-        "Master of Engineering": "M.Eng."
-    ]
-
-    var detectedDegreeAbbreviation: String? {
-        guard let abschluss else { return nil }
-        let normalized = abschluss.trimmingCharacters(in: .whitespaces)
-        if normalized.isEmpty { return nil }
-        return Self.degreeAbbreviations[normalized] ?? normalized
-    }
-
-    var detectedDegreeType: String {
-        guard let abschluss else { return "" }
-        return abschluss.localizedCaseInsensitiveContains("master") ? "master" : "bachelor"
-    }
-
-    var detectedFachName: String? {
-        guard let fach else { return nil }
-        let stripped = fach.replacingOccurrences(
-            of: #"\s*\(PO-Version\s*\d{4}\)"#, with: "", options: .regularExpression
-        )
-        let trimmed = stripped.trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    var detectedStudiengangLabel: String? {
-        let parts = [detectedDegreeAbbreviation, detectedFachName].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    /// Das (Abschluss, Fach)-Paar dieser Tabelle, falls beide Stammdaten-Felder beim Scrapen
+    /// gefunden wurden. Dient als Schlüssel, um die Tabelle einer `DegreeOption` zuzuordnen.
+    var degreeOption: DegreeOption? {
+        guard let abschluss, !abschluss.isEmpty, let fach, !fach.isEmpty else { return nil }
+        return DegreeOption(abschluss: abschluss, fach: fach)
     }
 }

@@ -31,6 +31,10 @@
             android:exported="false"
             android:label="@string/display_options_title" />
 
+        <activity
+            android:name=".DegreeSetupActivity"
+            android:exported="false" />
+
     </application>
 
 </manifest>

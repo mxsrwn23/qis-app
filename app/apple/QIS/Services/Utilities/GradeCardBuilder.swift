@@ -25,6 +25,20 @@ enum GradeCardBuilder {
             return row[index]
         }
 
+        // QIS trägt bei anerkannten/angerechneten Leistungen ohne eigene Prüfung (z. B. Transfer
+        // aus einem anderen Studiengang) oft "0,0" statt eines echten Notenwerts ein -- auf der
+        // deutschen 1,0-5,0-Skala kein gültiger Wert. GradeAnalysis.average() schließt solche
+        // Versuche bereits von der Schnittberechnung aus (`grade > 0`); hier wird dieselbe Regel
+        // auf die Anzeige angewendet, damit nicht fälschlich "0,0" als Note erscheint, wo in
+        // Wirklichkeit keine vorliegt (Anzeige fällt dann auf den normalen Leer-Platzhalter "–" zurück).
+        func note(_ index: Int?, in row: [String]) -> String {
+            let raw = value(index, in: row).trimmingCharacters(in: .whitespaces)
+            if let parsed = Double(raw.replacingOccurrences(of: ",", with: ".")), parsed == 0 {
+                return ""
+            }
+            return raw
+        }
+
         let rows = table.rows
         var cards: [ModuleCardData] = []
         var currentSectionTitle: String?
@@ -65,7 +79,7 @@ enum GradeCardBuilder {
             let attempts = filteredDetails.map { detailRow in
                 AttemptRow(
                     semester: value(semesterIndex, in: detailRow).trimmingCharacters(in: .whitespaces),
-                    note: value(noteIndex, in: detailRow).trimmingCharacters(in: .whitespaces),
+                    note: note(noteIndex, in: detailRow),
                     versuch: value(versuchIndex, in: detailRow).trimmingCharacters(in: .whitespaces),
                     datum: value(datumIndex, in: detailRow).trimmingCharacters(in: .whitespaces),
                     status: value(statusIndex, in: detailRow)
@@ -93,7 +107,7 @@ enum GradeCardBuilder {
             cards.append(ModuleCardData(
                 sectionTitle: currentSectionTitle,
                 moduleName: moduleName,
-                grade: value(noteIndex, in: row).trimmingCharacters(in: .whitespaces),
+                grade: note(noteIndex, in: row),
                 status: value(statusIndex, in: row),
                 ects: value(ectsIndex, in: row).trimmingCharacters(in: .whitespaces),
                 attempts: attempts,
@@ -118,7 +132,6 @@ enum GradeCardBuilder {
     static func filtered(_ cards: [ModuleCardData], by filter: GradesFilter) -> [ModuleCardData] {
         switch filter {
         case .all: return cards
-        case .passed: return cards.filter { $0.statusCategory == .be }
         case .open: return cards.filter { $0.statusCategory != .be }
         }
     }

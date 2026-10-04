@@ -75,12 +75,13 @@ struct ModuleCardData: Identifiable {
 }
 
 enum GradesFilter: String, CaseIterable, Identifiable {
-    case all, passed, open
+    case all, open
+
     var id: String { rawValue }
+
     var label: String {
         switch self {
         case .all: return "Alle"
-        case .passed: return "Bestanden"
         case .open: return "Offen"
         }
     }

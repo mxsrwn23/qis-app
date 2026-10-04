@@ -13,9 +13,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -23,6 +25,7 @@ import java.util.regex.Pattern;
 
 import dev.maxsauerwein.qis.model.GradeTable;
 import dev.maxsauerwein.qis.storage.SessionCookieStore;
+import dev.maxsauerwein.qis.util.QISLabels;
 import okhttp3.Cookie;
 import okhttp3.CookieJar;
 import okhttp3.FormBody;
@@ -35,7 +38,7 @@ import okhttp3.Response;
 public final class QISClient {
 
     public interface Callback {
-        void onSuccess(GradeTable gradeTable);
+        void onSuccess(List<GradeTable> gradeTables);
         void onError(Exception error);
     }
 
@@ -112,8 +115,8 @@ public final class QISClient {
     public void fetchGrades(String username, String password, boolean allowSessionReuse, Callback callback) {
         executor.execute(() -> {
             try {
-                GradeTable gradeTable = fetchGradesBlocking(username, password, allowSessionReuse);
-                mainHandler.post(() -> callback.onSuccess(gradeTable));
+                List<GradeTable> gradeTables = fetchGradesBlocking(username, password, allowSessionReuse);
+                mainHandler.post(() -> callback.onSuccess(gradeTables));
             } catch (Exception e) {
                 mainHandler.post(() -> callback.onError(e));
             }
@@ -129,7 +132,7 @@ public final class QISClient {
      *  den vollen Login. Reine Netzwerkfehler (IOException) lösen dagegen keinen zweiten Versuch
      *  aus. Mit {@code allowSessionReuse: false} (z. B. beim expliziten Testen neuer Zugangsdaten
      *  in den Einstellungen) wird immer vollständig neu angemeldet. */
-    public GradeTable fetchGradesBlocking(String username, String password, boolean allowSessionReuse)
+    public List<GradeTable> fetchGradesBlocking(String username, String password, boolean allowSessionReuse)
             throws IOException, QISException {
         if (allowSessionReuse) {
             HttpUrl baseUrl = HttpUrl.parse(BASE);
@@ -137,7 +140,7 @@ public final class QISClient {
             if (stored != null) {
                 cookieJar.seed(baseUrl, stored);
                 try {
-                    return fetchGradeTable();
+                    return fetchGradeTables();
                 } catch (QISException sessionInvalid) {
                     // Session abgelaufen oder Seite hat nicht die erwartete Struktur (z. B.
                     // Redirect zurück zum IdP): einmaliger Fallback auf den vollen Login unten.
@@ -150,7 +153,7 @@ public final class QISClient {
         }
         login(username, password);
         saveCurrentSession(username);
-        return fetchGradeTable();
+        return fetchGradeTables();
     }
 
     private void saveCurrentSession(String username) {
@@ -238,7 +241,13 @@ public final class QISClient {
 
     // MARK: Notenspiegel-Navigation (qis-unlocked.py: TEIL 3)
 
-    private GradeTable fetchGradeTable() throws IOException, QISException {
+    /** Ermittelt alle tatsächlich im Studiengangs-Baum des Nutzers vorhandenen (Abschluss, Fach)-
+     *  Kombinationen und lädt für jede davon ihre eigene Notenliste. Es wird nie geraten oder
+     *  hartkodiert, welcher Abschluss/Studiengang "der richtige" ist -- hat der Nutzer nur eine
+     *  Kombination, liefert diese Methode genau ein Element; hat er mehrere (z. B. zwei
+     *  Abschlüsse, oder ein Abschluss mit zwei Fachrichtungen), liefert sie alle, damit die
+     *  Auswahl darunter dem Nutzer überlassen werden kann (siehe GradeSettingsStore). */
+    private List<GradeTable> fetchGradeTables() throws IOException, QISException {
         Document menuDoc = getDocument(MENU_URL);
         if (isLoginPage(menuDoc)) {
             throw new QISException("Sitzung abgelaufen.");
@@ -250,25 +259,38 @@ public final class QISClient {
         }
         Document treeDoc = getDocument(notenspiegelHref);
 
-        String expandHref = findNewestStudiengangHref(treeDoc, "struct=auswahlBaum.*expand=0");
-        if (expandHref == null) {
+        // Oberste Baumebene: eine Kategorie pro Abschluss-Typ (z. B. "Abschluss Bachelor of
+        // Science", "Abschluss Bachelor of Engineering"). Ein frisch eingeklappter Baum zeigt hier
+        // normalerweise genau einen Kandidaten pro tatsächlich vorhandenem Abschluss -- bei
+        // Studierenden mit mehreren Abschlüssen (Doppelstudium/Zweitstudium) können es aber auch
+        // mehrere sein. Alle werden einzeln expandiert, keiner wird vorab verworfen.
+        List<String> topLevelHrefs = findAllHrefs(treeDoc, "struct=auswahlBaum.*expand=0");
+        if (topLevelHrefs.isEmpty()) {
             throw new QISException("Studiengangs-Baum konnte nicht aufgeklappt werden.");
         }
-        Document expandedDoc = getDocument(expandHref);
 
-        // Der Baum einer frischen Session ist meist eingeklappt, daher findet der vorige Schritt
-        // immer nur einen "expand=0"-Kandidaten (die übergeordnete Kategorie, z. B. "Abschluss
-        // Bachelor of Science"), dessen Ziel wieder eine Baumseite ist. Die eigentliche
-        // Studiengangs-Auswahl (und damit der PO-Versions-Tiebreak) wird erst hier verfügbar,
-        // sobald diese Seite die einzelnen Studiengänge auflistet.
-        String listHref = findNewestStudiengangHref(expandedDoc, "next=list\\.vm");
-        if (listHref == null) {
+        List<String> listHrefs = new ArrayList<>();
+        for (String topHref : topLevelHrefs) {
+            Document expandedDoc = getDocument(topHref);
+
+            // Die eigentliche Studiengangs-Auswahl (und damit der PO-Versions-Tiebreak pro Fach)
+            // wird erst hier verfügbar, sobald diese Seite die einzelnen Studiengänge dieses
+            // Abschlusses auflistet. Innerhalb desselben Fachs gewinnt die neueste PO-Version
+            // (Schwerpunktwechsel innerhalb derselben Prüfungsordnung); unterschiedliche Fächer
+            // bleiben dagegen beide erhalten, statt dass eines dem anderen "zum Opfer fällt".
+            listHrefs.addAll(findNewestPerFach(expandedDoc, "next=list\\.vm"));
+        }
+        if (listHrefs.isEmpty()) {
             throw new QISException("Notenliste konnte nicht gefunden werden.");
         }
-        Document gradesDoc = getDocument(listHref);
 
-        StudentInfo studentInfo = parseStudentInfo(gradesDoc);
-        return parseGradeTable(gradesDoc, studentInfo.abschluss, studentInfo.fach);
+        List<GradeTable> tables = new ArrayList<>();
+        for (String listHref : listHrefs) {
+            Document gradesDoc = getDocument(listHref);
+            StudentInfo studentInfo = parseStudentInfo(gradesDoc);
+            tables.add(parseGradeTable(gradesDoc, studentInfo.abschluss, studentInfo.fach));
+        }
+        return tables;
     }
 
     private static final class StudentInfo {
@@ -314,38 +336,68 @@ public final class QISClient {
         return null;
     }
 
-    /**
-     * Wählt den Studiengangs-Link mit der neuesten "PO-Version JJJJ" im Text aus und bevorzugt
-     * bei gleichem Jahr den zuletzt aufgeführten Link (z. B. bei einem Schwerpunktwechsel
-     * innerhalb derselben Prüfungsordnung wie "Informatik" zu "Informatik Schwerpunkt KI",
-     * beide unter PO 2024). QIS listet ältere Einschreibungen im Baum zuerst auf. Dem ersten
-     * "expand=0"-Link blind zu folgen lud daher stillschweigend eine veraltete, unvollständige
-     * Modulliste statt der aktuellen.
-     */
-    private String findNewestStudiengangHref(Document document, String pattern) {
+    /** Sammelt alle Hrefs, deren URL auf pattern passt, in Dokumentreihenfolge (ohne Duplikate). */
+    private List<String> findAllHrefs(Document document, String pattern) {
         Pattern regex = Pattern.compile(pattern);
-        Pattern poRegex = Pattern.compile("PO-Version\\s*(\\d{4})");
-
-        String bestHref = null;
-        int bestYear = -1;
+        Set<String> seen = new HashSet<>();
+        List<String> hrefs = new ArrayList<>();
         for (Element link : document.select("a[href]")) {
             String href = link.attr("href");
             if (!regex.matcher(href).find()) {
                 continue;
             }
-            if (bestHref == null) {
-                bestHref = link.absUrl("href");
-            }
-            Matcher poMatcher = poRegex.matcher(link.text());
-            if (poMatcher.find()) {
-                int year = Integer.parseInt(poMatcher.group(1));
-                if (year >= bestYear) {
-                    bestYear = year;
-                    bestHref = link.absUrl("href");
-                }
+            String absHref = link.absUrl("href");
+            if (seen.add(absHref)) {
+                hrefs.add(absHref);
             }
         }
-        return bestHref;
+        return hrefs;
+    }
+
+    /**
+     * Gruppiert die Studiengangs-Links nach Fach (Linktext ohne den "(PO-Version JJJJ)"-Zusatz)
+     * und behält pro Fach nur den Link mit der neuesten PO-Version (bevorzugt bei Gleichstand den
+     * zuletzt aufgeführten) -- z. B. bei einem Schwerpunktwechsel innerhalb derselben
+     * Prüfungsordnung wie "Informatik" zu "Informatik Schwerpunkt KI", beide unter PO 2024. QIS
+     * listet ältere Einschreibungen im Baum zuerst auf, daher würde ein blindes "ersten Treffer
+     * nehmen" stillschweigend eine veraltete, unvollständige Modulliste laden statt der aktuellen.
+     * Unterschiedliche Fächer (unterschiedlicher Linktext nach Entfernen der PO-Version) werden
+     * dagegen nie gegeneinander ausgespielt -- beide bleiben als eigene Kombination erhalten.
+     */
+    private List<String> findNewestPerFach(Document document, String pattern) {
+        Pattern regex = Pattern.compile(pattern);
+        Pattern poRegex = Pattern.compile("PO-Version\\s*(\\d{4})");
+
+        List<String> order = new ArrayList<>();
+        Map<String, int[]> bestYearByFach = new HashMap<>();
+        Map<String, String> bestHrefByFach = new HashMap<>();
+        for (Element link : document.select("a[href]")) {
+            String href = link.attr("href");
+            if (!regex.matcher(href).find()) {
+                continue;
+            }
+
+            String text = link.text();
+            String fachKey = QISLabels.fachName(text);
+            Matcher poMatcher = poRegex.matcher(text);
+            int year = poMatcher.find() ? Integer.parseInt(poMatcher.group(1)) : 0;
+
+            int[] existingYear = bestYearByFach.get(fachKey);
+            if (existingYear == null) {
+                bestYearByFach.put(fachKey, new int[]{year});
+                bestHrefByFach.put(fachKey, link.absUrl("href"));
+                order.add(fachKey);
+            } else if (year >= existingYear[0]) {
+                existingYear[0] = year;
+                bestHrefByFach.put(fachKey, link.absUrl("href"));
+            }
+        }
+
+        List<String> result = new ArrayList<>();
+        for (String fachKey : order) {
+            result.add(bestHrefByFach.get(fachKey));
+        }
+        return result;
     }
 
     /**
