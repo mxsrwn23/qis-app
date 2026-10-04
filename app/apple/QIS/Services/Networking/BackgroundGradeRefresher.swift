@@ -18,11 +18,7 @@ enum BackgroundGradeRefresher {
     /// Im Debug-Build kurz gehalten, damit sich der echte Hintergrund-Lauf beim Testen nicht durch
     /// jedes erneute Backgrounding um weitere 4h verschiebt (jedes `schedule()` ersetzt die zuvor
     /// eingeplante Anfrage).
-    #if DEBUG
-    private static let earliestInterval: TimeInterval = 5 * 60
-    #else
     private static let earliestInterval: TimeInterval = 4 * 60 * 60
-    #endif
 
     /// Registriert den Task-Handler. Muss vor Abschluss des App-Starts aufgerufen werden.
     static func register() {
