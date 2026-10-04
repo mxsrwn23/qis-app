@@ -89,7 +89,7 @@ public final class GradeCardBuilder {
             for (List<String> detail : filteredDetails) {
                 attempts.add(new AttemptRow(
                         value(semesterIndex, detail).trim(),
-                        value(noteIndex, detail).trim(),
+                        note(noteIndex, detail),
                         value(versuchIndex, detail).trim(),
                         value(datumIndex, detail).trim(),
                         value(statusIndex, detail)
@@ -109,7 +109,7 @@ public final class GradeCardBuilder {
             cards.add(new ModuleCardData(
                     currentSectionTitle,
                     moduleName,
-                    value(noteIndex, row).trim(),
+                    note(noteIndex, row),
                     value(statusIndex, row),
                     value(ectsIndex, row).trim(),
                     attempts,
@@ -136,7 +136,7 @@ public final class GradeCardBuilder {
         return total;
     }
 
-    public enum Filter { ALL, PASSED, OPEN }
+    public enum Filter { ALL, OPEN }
 
     public static List<ModuleCardData> filtered(List<ModuleCardData> cards, Filter filter) {
         if (filter == Filter.ALL) {
@@ -144,8 +144,7 @@ public final class GradeCardBuilder {
         }
         List<ModuleCardData> result = new ArrayList<>();
         for (ModuleCardData card : cards) {
-            boolean isPassed = card.statusCategory() == GradeStyling.StatusCategory.BE;
-            if ((filter == Filter.PASSED) == isPassed) {
+            if (card.statusCategory() != GradeStyling.StatusCategory.BE) {
                 result.add(card);
             }
         }
@@ -234,6 +233,24 @@ public final class GradeCardBuilder {
             return "";
         }
         return row.get(index);
+    }
+
+    /** QIS trägt bei anerkannten/angerechneten Leistungen ohne eigene Prüfung (z. B. Transfer aus
+     *  einem anderen Studiengang) oft "0,0" statt eines echten Notenwerts ein -- auf der
+     *  deutschen 1,0-5,0-Skala kein gültiger Wert. GradeAnalysis.average() schließt solche
+     *  Versuche bereits von der Schnittberechnung aus (grade > 0); hier wird dieselbe Regel auf
+     *  die Anzeige angewendet, damit nicht fälschlich "0,0" als Note erscheint, wo in Wirklichkeit
+     *  keine vorliegt (Anzeige fällt dann auf den normalen Leer-Platzhalter "–" zurück). */
+    private static String note(int index, List<String> row) {
+        String raw = value(index, row).trim();
+        try {
+            if (Double.parseDouble(raw.replace(",", ".")) == 0) {
+                return "";
+            }
+        } catch (NumberFormatException ignored) {
+            // kein numerischer Wert, unverändert zurückgeben
+        }
+        return raw;
     }
 
     private static String collapseWhitespace(String text) {

@@ -2,6 +2,7 @@ package dev.maxsauerwein.qis.util;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import dev.maxsauerwein.qis.model.GradeTable;
 import dev.maxsauerwein.qis.storage.GradeSettingsStore;
@@ -17,33 +18,63 @@ public final class GradeAnalysis {
 
     public static final class ModuleGroup {
         public final int headerRowIndex;
+        public final String moduleKey;
         public final List<Integer> detailRowIndices = new ArrayList<>();
 
-        ModuleGroup(int headerRowIndex) {
+        ModuleGroup(int headerRowIndex, String moduleKey) {
             this.headerRowIndex = headerRowIndex;
+            this.moduleKey = moduleKey;
         }
     }
 
     /**
      * Gruppiert Zeilen unter die nächstgelegene vorangehende "Modul: …"-Kopfzeile; eine
      * Abschnitts-Trennzeile (Kernmodule/Pflichtmodule/Wahlpflichtmodule) beendet die aktuelle
-     * Gruppe.
+     * Gruppe. Der Schlüssel entspricht ModuleCardData.id(), damit Einstellungen pro Karte auch
+     * für die Schnittberechnung gelten.
      */
     public static List<ModuleGroup> moduleGroups(List<List<String>> rows, int prüfungstextIndex) {
         List<ModuleGroup> groups = new ArrayList<>();
         ModuleGroup current = null;
+        String currentSectionTitle = null;
         for (int i = 0; i < rows.size(); i++) {
             List<String> row = rows.get(i);
-            if (GradeStyling.isModuleRow(row, prüfungstextIndex)) {
-                current = new ModuleGroup(i);
-                groups.add(current);
-            } else if (GradeStyling.isSectionRow(row, prüfungstextIndex)) {
+            if (GradeStyling.isSectionRow(row, prüfungstextIndex)) {
+                String text = value(prüfungstextIndex, row).trim();
+                currentSectionTitle = text.isEmpty() ? null : text;
                 current = null;
+            } else if (GradeStyling.isModuleRow(row, prüfungstextIndex)) {
+                String moduleName = collapseWhitespace(value(prüfungstextIndex, row).replace("Modul:", ""));
+                String key = (currentSectionTitle != null ? currentSectionTitle : "") + "|" + moduleName;
+                current = new ModuleGroup(i, key);
+                groups.add(current);
             } else if (current != null) {
                 current.detailRowIndices.add(i);
             }
         }
         return groups;
+    }
+
+    private static String value(int index, List<String> row) {
+        if (index < 0 || index >= row.size()) {
+            return "";
+        }
+        return row.get(index);
+    }
+
+    private static String collapseWhitespace(String text) {
+        String[] parts = text.trim().split("\\s+");
+        StringBuilder builder = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append(' ');
+            }
+            builder.append(part);
+        }
+        return builder.toString();
     }
 
     private static final class Attempt {
@@ -96,7 +127,7 @@ public final class GradeAnalysis {
      * "last" wählt pro Modul den Versuch mit der höchsten Versuchsnummer, "best" wählt die beste
      * (niedrigste) Note.
      */
-    public static Double average(GradeTable table, GradeSettingsStore.AverageMode mode) {
+    public static Double average(GradeTable table, GradeSettingsStore.AverageMode mode, Set<String> excludedModuleKeys) {
         int noteIndex = GradeStyling.columnIndex(table.header, "note");
         int ectsIndex = GradeStyling.columnIndex(table.header, "ects");
         if (noteIndex < 0 || ectsIndex < 0) {
@@ -110,6 +141,9 @@ public final class GradeAnalysis {
         double totalEcts = 0;
 
         for (ModuleGroup group : groups) {
+            if (excludedModuleKeys.contains(group.moduleKey)) {
+                continue;
+            }
             List<Attempt> groupAttempts = attempts(group, table.rows, noteIndex, ectsIndex, versuchIndex);
             if (groupAttempts.isEmpty()) {
                 continue;

@@ -17,6 +17,7 @@ import dev.maxsauerwein.qis.network.QISClient;
 import dev.maxsauerwein.qis.notification.NotificationService;
 import dev.maxsauerwein.qis.storage.CredentialStore;
 import dev.maxsauerwein.qis.storage.GradeCacheStore;
+import dev.maxsauerwein.qis.storage.GradeSettingsStore;
 import dev.maxsauerwein.qis.storage.SeenGradesStore;
 
 /** Periodischer Hintergrund-Abruf des Notenspiegels via WorkManager. Entspricht
@@ -49,11 +50,23 @@ public final class GradeRefreshWorker extends Worker {
 
         try {
             QISClient client = new QISClient(context);
-            GradeTable table = client.fetchGradesBlocking(credentials.username, credentials.password, true);
-            new GradeCacheStore(context).saveTable(table);
+            List<GradeTable> tables = client.fetchGradesBlocking(credentials.username, credentials.password, true);
+            new GradeCacheStore(context).saveTables(tables);
+
+            // Solange der Nutzer bei mehreren Abschluss-/Fach-Kombinationen noch keine Wahl
+            // getroffen hat (siehe GradeSettingsStore.needsDegreeSetup), lässt sich nicht eindeutig
+            // bestimmen, welche Tabelle für die Benachrichtigung relevant ist -- in diesem Fall
+            // wird nur gecacht, aber nicht benachrichtigt (die Auswahl erfolgt beim nächsten
+            // App-Start im Ersteinrichtungs-Dialog).
+            GradeSettingsStore.Settings settings = GradeSettingsStore.loadApplyingAutoDetection(context, tables);
+            GradeTable active = settings.activeTable(tables);
+            if (active == null) {
+                Log.i(TAG, "Abruf erfolgreich, aber Abschluss-/Studiengangswahl steht noch aus");
+                return Result.success();
+            }
 
             SeenGradesStore seenGradesStore = new SeenGradesStore(context);
-            Set<String> newModules = seenGradesStore.newlyGradedForNotification(table);
+            Set<String> newModules = seenGradesStore.newlyGradedForNotification(active);
             Log.i(TAG, "Abruf erfolgreich, " + newModules.size() + " neu benotete Module");
             if (!newModules.isEmpty()) {
                 List<String> sorted = new ArrayList<>(newModules);

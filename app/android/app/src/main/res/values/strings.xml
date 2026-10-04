@@ -27,14 +27,12 @@
     <string name="kpi_average_label">Schnitt</string>
     <string name="kpi_ects_label">ECTS</string>
     <string name="filter_all">Alle</string>
-    <string name="filter_passed">Bestanden</string>
     <string name="filter_open">Offen</string>
     <string name="sort_grade">Note</string>
     <string name="sort_semester">Semester</string>
     <string name="sort_default">Sortieren</string>
     <string name="sort_none">Keine</string>
     <string name="profile_section_title">Profil</string>
-    <string name="studiengang_hint">Studiengang (z. B. B.Sc. Informatik)</string>
     <string name="semester_hint">Semester</string>
     <string name="target_ects_hint">Ziel-ECTS (automatisch)</string>
     <string name="new_badge">Neu</string>
@@ -46,4 +44,20 @@
     <string name="notification_multiple_title">Neue Noten</string>
     <string name="debug_test_refresh">Hintergrund-Abruf jetzt testen (Debug)</string>
     <string name="debug_reset_baseline">Benachrichtigungs-Baseline zurücksetzen (Debug)</string>
+
+    <string name="degree_setup_title">Fast geschafft</string>
+    <string name="degree_setup_subtitle">QIS hat für deinen Account mehrere Möglichkeiten gemeldet. Wähle aus, welche Noten angezeigt werden sollen, das lässt sich später jederzeit in den Einstellungen ändern.</string>
+    <string name="degree_setup_abschluss_label">Abschluss-Typ</string>
+    <string name="degree_setup_studiengang_label">Studiengang</string>
+    <string name="degree_setup_confirm_action">Übernehmen</string>
+
+    <string name="abschluss_label">Abschluss-Typ</string>
+    <string name="studiengang_label">Studiengang</string>
+    <string name="degree_profile_footer">QIS meldet mehrere Möglichkeiten für deinen Account. Wähle aus, welche Noten angezeigt werden sollen.</string>
+
+    <string name="archive_action">Archivieren</string>
+    <string name="restore_action">Einblenden</string>
+    <string name="archived_section_title">Archiviert</string>
+    <string name="include_in_average">In Schnitt einbeziehen</string>
+    <string name="no_semester_section_title">Ohne Semester</string>
 </resources>

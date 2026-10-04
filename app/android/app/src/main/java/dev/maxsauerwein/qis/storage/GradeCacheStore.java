@@ -31,40 +31,49 @@ public final class GradeCacheStore {
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
-    public GradeTable loadTable() {
+    public List<GradeTable> loadTables() {
         String json = prefs.getString(KEY_TABLE, null);
         if (json == null) {
             return null;
         }
         try {
-            JSONObject obj = new JSONObject(json);
-            List<String> header = toStringList(obj.getJSONArray("header"));
-            JSONArray rowsJson = obj.getJSONArray("rows");
-            List<List<String>> rows = new ArrayList<>();
-            for (int i = 0; i < rowsJson.length(); i++) {
-                rows.add(toStringList(rowsJson.getJSONArray(i)));
+            JSONArray tablesJson = new JSONArray(json);
+            List<GradeTable> tables = new ArrayList<>();
+            for (int t = 0; t < tablesJson.length(); t++) {
+                JSONObject obj = tablesJson.getJSONObject(t);
+                List<String> header = toStringList(obj.getJSONArray("header"));
+                JSONArray rowsJson = obj.getJSONArray("rows");
+                List<List<String>> rows = new ArrayList<>();
+                for (int i = 0; i < rowsJson.length(); i++) {
+                    rows.add(toStringList(rowsJson.getJSONArray(i)));
+                }
+                String abschluss = obj.isNull("abschluss") ? null : obj.getString("abschluss");
+                String fach = obj.isNull("fach") ? null : obj.getString("fach");
+                tables.add(new GradeTable(header, rows, abschluss, fach));
             }
-            String abschluss = obj.isNull("abschluss") ? null : obj.getString("abschluss");
-            String fach = obj.isNull("fach") ? null : obj.getString("fach");
-            return new GradeTable(header, rows, abschluss, fach);
+            return tables;
         } catch (JSONException e) {
             return null;
         }
     }
 
-    public void saveTable(GradeTable table) {
+    public void saveTables(List<GradeTable> tables) {
         try {
-            JSONObject obj = new JSONObject();
-            obj.put("header", new JSONArray(table.header));
-            JSONArray rowsJson = new JSONArray();
-            for (List<String> row : table.rows) {
-                rowsJson.put(new JSONArray(row));
+            JSONArray tablesJson = new JSONArray();
+            for (GradeTable table : tables) {
+                JSONObject obj = new JSONObject();
+                obj.put("header", new JSONArray(table.header));
+                JSONArray rowsJson = new JSONArray();
+                for (List<String> row : table.rows) {
+                    rowsJson.put(new JSONArray(row));
+                }
+                obj.put("rows", rowsJson);
+                obj.put("abschluss", table.abschluss);
+                obj.put("fach", table.fach);
+                tablesJson.put(obj);
             }
-            obj.put("rows", rowsJson);
-            obj.put("abschluss", table.abschluss);
-            obj.put("fach", table.fach);
             prefs.edit()
-                    .putString(KEY_TABLE, obj.toString())
+                    .putString(KEY_TABLE, tablesJson.toString())
                     .putLong(KEY_LAST_FETCH, System.currentTimeMillis())
                     .apply();
         } catch (JSONException ignored) {

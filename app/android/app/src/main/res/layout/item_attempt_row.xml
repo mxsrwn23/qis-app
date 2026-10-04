@@ -9,14 +9,22 @@
 
     <TextView
         android:id="@+id/attemptSemester"
-        android:layout_width="72dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:minWidth="72dp"
+        android:maxLines="1"
+        android:ellipsize="end"
         android:textAppearance="?attr/textAppearanceBodyMedium" />
 
     <TextView
         android:id="@+id/attemptNote"
-        android:layout_width="48dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:minWidth="44dp"
+        android:maxLines="1"
+        android:ellipsize="end"
         android:textAppearance="?attr/textAppearanceBodyMedium" />
 
     <TextView
@@ -24,12 +32,15 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
+        android:maxLines="1"
+        android:ellipsize="end"
         android:textAppearance="?attr/textAppearanceBodySmall" />
 
     <TextView
         android:id="@+id/attemptDatum"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:maxLines="1"
         android:textAppearance="?attr/textAppearanceBodySmall" />
 
 </LinearLayout>

@@ -118,6 +118,24 @@
             android:paddingVertical="4dp"
             android:visibility="gone" />
 
+        <View
+            android:id="@+id/averageDivider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginHorizontal="16dp"
+            android:background="?attr/colorOutlineVariant"
+            android:visibility="gone" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/averageSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="12dp"
+            android:text="@string/include_in_average"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:visibility="gone" />
+
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>

@@ -38,6 +38,12 @@ public final class ModuleCardData {
         this.remarkStatus = remarkStatus;
     }
 
+    /** Eindeutiger Schlüssel dieser Karte innerhalb einer Tabelle -- Grundlage für Archiv- und
+     *  Notenschnitt-Ausschluss-Stores. Entspricht ModuleCardData.swifts id. */
+    public String id() {
+        return (sectionTitle != null ? sectionTitle : "") + "|" + moduleName;
+    }
+
     private GradeStyling.StatusCategory baseStatusCategory() {
         switch (status.trim().toLowerCase(Locale.GERMAN)) {
             case "be": return GradeStyling.StatusCategory.BE;
