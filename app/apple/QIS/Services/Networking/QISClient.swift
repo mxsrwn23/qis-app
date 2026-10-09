@@ -3,7 +3,9 @@ import SwiftSoup
 
 enum QISError: Error, LocalizedError {
     case notOnLoginPage
+    case csrfTokenMissing
     case invalidCredentials
+    case loginFailed
     case sessionExpired
     case navigationFailed(String)
     case gradeTableNotFound
@@ -12,7 +14,9 @@ enum QISError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notOnLoginPage: return "QIS hat nicht zur erwarteten Login-Seite weitergeleitet."
+        case .csrfTokenMissing: return "CSRF-Token konnte nicht gefunden werden."
         case .invalidCredentials: return "Zugangsdaten wurden nicht akzeptiert."
+        case .loginFailed: return "QIS-Anmeldung ist fehlgeschlagen."
         case .sessionExpired: return "Sitzung abgelaufen."
         case .navigationFailed(let step): return "Notenspiegel konnte nicht geladen werden (\(step))."
         case .gradeTableNotFound: return "Es wurde keine Notentabelle gefunden."
@@ -64,28 +68,21 @@ actor QISClient {
     /// false` (z. B. beim expliziten Testen neuer Zugangsdaten in den Einstellungen) wird immer
     /// vollständig neu angemeldet.
     func fetchGrades(username: String, password: String, allowSessionReuse: Bool = true) async throws -> [GradeTable] {
-        DebugLog.log("fetchGrades gestartet (allowSessionReuse: \(allowSessionReuse))")
         if allowSessionReuse, let cookies = SessionCookieStore.load(username: username) {
-            DebugLog.log("Gespeicherte Session gefunden (\(cookies.count) Cookies), versuche Wiederverwendung")
             applyCookies(cookies)
             do {
-                let tables = try await fetchGradeTables()
-                DebugLog.log("Session-Wiederverwendung erfolgreich")
-                return tables
+                return try await fetchGradeTables()
             } catch let error as QISError where error.indicatesInvalidSession {
                 // Die ungültige Session-Cookie muss vor dem vollen Login entfernt werden, sonst
                 // schickt der erste Request der Login-Seite die abgelaufene JSESSIONID/
                 // _shibsession_-Cookie mit. QIS liefert dann nicht die erwartete leere
                 // Login-Seite, wodurch der Fallback-Login selbst mit "notOnLoginPage" fehlschlägt.
-                DebugLog.log("Session ungültig (\(error)), verwerfe Cookies und melde neu an")
                 clearCookies()
             }
         }
         try await login(username: username, password: password)
         saveCurrentSession(username: username)
-        let tables = try await fetchGradeTables()
-        DebugLog.log("fetchGrades abgeschlossen: \(tables.count) Tabelle(n)")
-        return tables
+        return try await fetchGradeTables()
     }
 
     private func applyCookies(_ cookies: [HTTPCookie]) {
@@ -107,26 +104,49 @@ actor QISClient {
         SessionCookieStore.save(username: username, cookies: cookies)
     }
 
-    /// Erkennt das native QIS-Login-Formular (Felder "asdf"/"fdsa"). Die Hochschule hat den
-    /// föderierten Shibboleth/SAML-Login (Felder "j_username"/"j_password" + SAML-Redirect-Dance)
-    /// inzwischen abgeschaltet -- "state=user&type=0" liefert seither direkt die Portalseite mit
-    /// diesem nativen Formular, ohne Redirect zu einem externen IdP.
     private func isLoginPage(_ document: Document) -> Bool {
-        (try? document.select("input[name=asdf]").first()) != nil
+        (try? document.select("input[name=j_username]").first()) != nil
     }
 
-    // MARK: - Anmeldung
+    // MARK: - Anmeldung (qis-unlocked.py: qis_full_login)
 
     private func login(username: String, password: String) async throws {
-        DebugLog.log("Login: lade Login-Seite")
         let loginPageURL = appendingQuery(Self.base, ["state": "user", "type": "0"])
-        let (loginPageData, _) = try await get(loginPageURL)
-        let loginDoc = try document(from: loginPageData)
-        guard isLoginPage(loginDoc) else {
-            DebugLog.log("Login fehlgeschlagen: keine Login-Seite gefunden")
+        let (loginPageData, loginPageResponse) = try await get(loginPageURL)
+        guard let landedURL = loginPageResponse.url else {
             throw QISError.notOnLoginPage
         }
-        DebugLog.log("Login: sende Zugangsdaten")
+
+        let loginDoc = try document(from: loginPageData)
+        // Die Ziel-URL enthält nicht immer "execution=e1s1" (Shibboleths Execution-ID hängt vom
+        // Flow-Zustand ab und steigt z. B. bei mehreren Anmeldeversuchen kurz hintereinander).
+        // Entscheidend ist allein, ob tatsächlich das Login-Formular geladen wurde.
+        guard isLoginPage(loginDoc) else {
+            throw QISError.notOnLoginPage
+        }
+        guard let csrfToken = try loginDoc.select("input[name=csrf_token]").first()?.attr("value") else {
+            throw QISError.csrfTokenMissing
+        }
+
+        let idpBody = formURLEncoded([
+            "csrf_token": csrfToken,
+            "j_username": username,
+            "j_password": password,
+            "_eventId_proceed": ""
+        ])
+        let (idpData, idpResponse) = try await post(landedURL, body: idpBody)
+        let idpDoc = try document(from: idpData)
+
+        guard let relayState = try idpDoc.select("input[name=RelayState]").first()?.attr("value"),
+              let samlResponse = try idpDoc.select("input[name=SAMLResponse]").first()?.attr("value"),
+              let samlForm = try idpDoc.select("form").first() else {
+            throw QISError.invalidCredentials
+        }
+        let actionAttr = try samlForm.attr("action")
+        let samlActionURL = URL(string: actionAttr, relativeTo: idpResponse.url)?.absoluteURL ?? idpResponse.url
+
+        let samlBody = formURLEncoded(["RelayState": relayState, "SAMLResponse": samlResponse])
+        _ = try await post(samlActionURL!, body: samlBody)
 
         let qisLoginURL = appendingQuery(Self.base, [
             "state": "user",
@@ -140,10 +160,8 @@ actor QISClient {
         let finalHTML = String(data: finalData, encoding: .utf8) ?? ""
         let finalURLString = finalResponse.url?.absoluteString ?? ""
         guard finalURLString.contains("menu.browse") || finalHTML.contains("Abmelden") else {
-            DebugLog.log("Login fehlgeschlagen: Zugangsdaten nicht akzeptiert (URL: \(finalURLString))")
-            throw QISError.invalidCredentials
+            throw QISError.loginFailed
         }
-        DebugLog.log("Login erfolgreich")
     }
 
     // MARK: - Notenspiegel-Navigation (qis-unlocked.py: TEIL 3)
@@ -157,13 +175,11 @@ actor QISClient {
     private func fetchGradeTables() async throws -> [GradeTable] {
         let menuDoc = try await getDocument(Self.menuURL)
         guard !isLoginPage(menuDoc) else {
-            DebugLog.log("fetchGradeTables fehlgeschlagen: Session abgelaufen (Menü zeigt Login-Seite)")
             throw QISError.sessionExpired
         }
 
         guard let notenspiegelHref = try findHref(in: menuDoc, matching: "state=notenspiegelStudent.*next=tree\\.vm"),
               let notenspiegelURL = URL(string: notenspiegelHref, relativeTo: Self.menuURL)?.absoluteURL else {
-            DebugLog.log("fetchGradeTables fehlgeschlagen: Notenspiegel-Link nicht im Menü gefunden")
             throw QISError.navigationFailed("Notenspiegel-Link")
         }
         let treeDoc = try await getDocument(notenspiegelURL)
@@ -175,10 +191,8 @@ actor QISClient {
         // mehrere sein. Alle werden einzeln expandiert, keiner wird vorab verworfen.
         let topLevelHrefs = try findAllHrefs(in: treeDoc, matching: "struct=auswahlBaum.*expand=0")
         guard !topLevelHrefs.isEmpty else {
-            DebugLog.log("fetchGradeTables fehlgeschlagen: Studiengangs-Baum ist leer")
             throw QISError.navigationFailed("Studiengangs-Baum")
         }
-        DebugLog.log("Studiengangs-Baum: \(topLevelHrefs.count) Abschluss-Kandidat(en)")
 
         var listURLs: [URL] = []
         for topHref in topLevelHrefs {
@@ -194,10 +208,8 @@ actor QISClient {
             listURLs.append(contentsOf: fachURLs)
         }
         guard !listURLs.isEmpty else {
-            DebugLog.log("fetchGradeTables fehlgeschlagen: keine Notenliste gefunden")
             throw QISError.navigationFailed("Notenliste")
         }
-        DebugLog.log("Notenlisten: \(listURLs.count) Fach-Kombination(en) gefunden")
 
         var tables: [GradeTable] = []
         for listURL in listURLs {
@@ -207,7 +219,6 @@ actor QISClient {
             gradeTable.abschluss = studentInfo.abschluss
             gradeTable.fach = studentInfo.fach
             tables.append(gradeTable)
-            DebugLog.log("Tabelle geparst: \(studentInfo.abschluss ?? "?") / \(studentInfo.fach ?? "?"), \(gradeTable.rows.count) Zeile(n)")
         }
         return tables
     }
@@ -434,20 +445,15 @@ actor QISClient {
     }
 
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let method = request.httpMethod ?? "GET"
-        let urlString = request.url?.absoluteString ?? "?"
         do {
             let (data, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse else {
-                DebugLog.log("\(method) \(urlString) -> keine HTTP-Antwort")
                 throw QISError.network(URLError(.badServerResponse))
             }
-            DebugLog.log("\(method) \(urlString) -> \(httpResponse.statusCode)")
             return (data, httpResponse)
         } catch let error as QISError {
             throw error
         } catch {
-            DebugLog.log("\(method) \(urlString) -> Fehler: \(error.localizedDescription)")
             throw QISError.network(error)
         }
     }
