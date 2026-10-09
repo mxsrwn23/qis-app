@@ -164,15 +164,11 @@ public final class QISClient {
         }
     }
 
-    /** Erkennt das native QIS-Login-Formular (Felder "asdf"/"fdsa"). Die Hochschule hat den
-     *  föderierten Shibboleth/SAML-Login (Felder "j_username"/"j_password" + SAML-Redirect-Dance)
-     *  inzwischen abgeschaltet -- "state=user&type=0" liefert seither direkt die Portalseite mit
-     *  diesem nativen Formular, ohne Redirect zu einem externen IdP. */
     private boolean isLoginPage(Document document) {
-        return document.selectFirst("input[name=asdf]") != null;
+        return document.selectFirst("input[name=j_username]") != null;
     }
 
-    // MARK: Anmeldung
+    // MARK: Anmeldung (qis-unlocked.py: qis_full_login)
 
     private void login(String username, String password) throws IOException, QISException {
         HttpUrl loginPageUrl = HttpUrl.parse(BASE).newBuilder()
@@ -184,9 +180,43 @@ public final class QISClient {
         Document loginDoc = Jsoup.parse(loginPageResponse.body().string(), landedUrl);
         loginPageResponse.close();
 
+        // Die Ziel-URL enthält nicht immer "execution=e1s1" (Shibboleths Execution-ID hängt vom
+        // Flow-Zustand ab und steigt z. B. bei mehreren Anmeldeversuchen kurz hintereinander).
+        // Entscheidend ist allein, ob tatsächlich das Login-Formular geladen wurde.
         if (!isLoginPage(loginDoc)) {
             throw new QISException("QIS hat nicht zur erwarteten Login-Seite weitergeleitet.");
         }
+
+        Element csrfInput = loginDoc.selectFirst("input[name=csrf_token]");
+        if (csrfInput == null) {
+            throw new QISException("CSRF-Token konnte nicht gefunden werden.");
+        }
+        String csrfToken = csrfInput.attr("value");
+
+        FormBody idpBody = new FormBody.Builder()
+                .add("csrf_token", csrfToken)
+                .add("j_username", username)
+                .add("j_password", password)
+                .add("_eventId_proceed", "")
+                .build();
+        Response idpResponse = execute(new Request.Builder().url(landedUrl).post(idpBody).build());
+        String idpUrl = idpResponse.request().url().toString();
+        Document idpDoc = Jsoup.parse(idpResponse.body().string(), idpUrl);
+        idpResponse.close();
+
+        Element relayStateInput = idpDoc.selectFirst("input[name=RelayState]");
+        Element samlResponseInput = idpDoc.selectFirst("input[name=SAMLResponse]");
+        Element samlForm = idpDoc.selectFirst("form");
+        if (relayStateInput == null || samlResponseInput == null || samlForm == null) {
+            throw new QISException("Zugangsdaten wurden nicht akzeptiert.");
+        }
+        String samlActionUrl = samlForm.absUrl("action");
+
+        FormBody samlBody = new FormBody.Builder()
+                .add("RelayState", relayStateInput.attr("value"))
+                .add("SAMLResponse", samlResponseInput.attr("value"))
+                .build();
+        execute(new Request.Builder().url(samlActionUrl).post(samlBody).build()).close();
 
         HttpUrl qisLoginUrl = HttpUrl.parse(BASE).newBuilder()
                 .addQueryParameter("state", "user")
@@ -205,7 +235,7 @@ public final class QISClient {
         String finalHtml = finalResponse.body().string();
         finalResponse.close();
         if (!finalUrl.contains("menu.browse") && !finalHtml.contains("Abmelden")) {
-            throw new QISException("Zugangsdaten wurden nicht akzeptiert.");
+            throw new QISException("QIS-Anmeldung ist fehlgeschlagen.");
         }
     }
 
